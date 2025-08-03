@@ -53,8 +53,6 @@ brews:
       name: goreleaserbot
       email: goreleaser@carlosbecker.com
     folder: Formula
-    homepage: "https://github.com/{{ .Env.GITHUB_REPOSITORY }}"
-    description: "macOS Web API for remote interaction with macOS and iCloud features"
     test: |
       system "#{bin}/mowa", "--version"
     install: |
