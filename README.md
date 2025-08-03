@@ -19,13 +19,21 @@ A Go-native web API server that allows you to interact with macOS and iCloud fea
 
 ### Option 1: Download Pre-built Binary (Recommended)
 
-Download the latest release from [GitHub Releases](https://github.com/your-username/mowa/releases) and extract it:
+Download the latest release from [GitHub Releases](https://github.com/mauromorales/mowa/releases) and extract it:
 
 ```bash
-# Download and extract (replace with actual release URL)
-curl -L https://github.com/your-username/mowa/releases/latest/download/mowa_Darwin_x86_64.zip -o mowa.zip
+# For Apple Silicon Macs
+curl -L https://github.com/mauromorales/mowa/releases/latest/download/mowa_Darwin_arm64.zip -o mowa.zip
+
+# For Intel Macs
+curl -L https://github.com/mauromorales/mowa/releases/latest/download/mowa_Darwin_x86_64.zip -o mowa.zip
+
+# Extract and set permissions
 unzip mowa.zip
 chmod +x mowa
+
+# Remove macOS quarantine attribute (required for downloaded binaries)
+xattr -d com.apple.quarantine mowa
 
 # Run the server
 ./mowa
