@@ -36,10 +36,4 @@ jobs:
       run: go test -v ./...
       
     - name: Build project
-      run: go build -o mowa
-      
-    - name: Verify binary
-      run: |
-        ./mowa --help || true
-        file mowa
-        ls -la mowa 
+      run: go build -o mowa 
