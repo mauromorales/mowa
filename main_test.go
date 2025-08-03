@@ -14,9 +14,13 @@ func setupTestServer() *echo.Echo {
 	e := echo.New()
 	
 	// Setup routes
+	e.GET("/", func(c echo.Context) error {
+		return c.String(http.StatusOK, "Mowa API is running! 🚀\n\nAvailable endpoints:\n- POST /api/messages\n- GET /api/uptime")
+	})
+	
 	api := e.Group("/api")
-	api.GET("/uptime", handleUptime)
-	api.POST("/messages", handleMessages)
+	api.GET("/uptime", handleGetUptime)
+	api.POST("/messages", handleSendMessages)
 	
 	return e
 }
@@ -70,7 +74,7 @@ func TestMessagesEndpoint(t *testing.T) {
 		t.Errorf("Expected status 200, got %d", rec.Code)
 	}
 	
-	var response MessagesResponse
+	var response MessageResponse
 	err := json.Unmarshal(rec.Body.Bytes(), &response)
 	if err != nil {
 		t.Fatalf("Failed to unmarshal response: %v", err)
@@ -126,19 +130,9 @@ func TestMessagesEndpointEmptyRecipients(t *testing.T) {
 	
 	e.ServeHTTP(rec, req)
 	
-	if rec.Code != http.StatusOK {
-		t.Errorf("Expected status 200, got %d", rec.Code)
-	}
-	
-	var response MessagesResponse
-	err := json.Unmarshal(rec.Body.Bytes(), &response)
-	if err != nil {
-		t.Fatalf("Failed to unmarshal response: %v", err)
-	}
-	
-	// Should return empty results array
-	if len(response.Results) != 0 {
-		t.Errorf("Expected 0 results, got %d", len(response.Results))
+	// Should return 400 for empty recipients (validation error)
+	if rec.Code != http.StatusBadRequest {
+		t.Errorf("Expected status 400, got %d", rec.Code)
 	}
 }
 
