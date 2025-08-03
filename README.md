@@ -17,7 +17,21 @@ A Go-native web API server that allows you to interact with macOS and iCloud fea
 
 ## Quick Start
 
-### 1. Clone and Build
+### Option 1: Download Pre-built Binary (Recommended)
+
+Download the latest release from [GitHub Releases](https://github.com/your-username/mowa/releases) and extract it:
+
+```bash
+# Download and extract (replace with actual release URL)
+curl -L https://github.com/your-username/mowa/releases/latest/download/mowa_Darwin_x86_64.zip -o mowa.zip
+unzip mowa.zip
+chmod +x mowa
+
+# Run the server
+./mowa
+```
+
+### Option 2: Build from Source
 
 ```bash
 # Clone the repository
@@ -238,18 +252,7 @@ go build -ldflags="-s -w" -o mowa
 ./mowa
 ```
 
-### Cross-Platform Build
 
-```bash
-# Build for macOS
-GOOS=darwin GOARCH=amd64 go build -o mowa-mac
-
-# Build for Linux
-GOOS=linux GOARCH=amd64 go build -o mowa-linux
-
-# Build for Windows
-GOOS=windows GOARCH=amd64 go build -o mowa.exe
-```
 
 ## Troubleshooting
 
