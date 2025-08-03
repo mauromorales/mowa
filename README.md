@@ -37,6 +37,9 @@ xattr -d com.apple.quarantine mowa
 
 # Run the server
 ./mowa
+
+# Or with a configuration file
+./mowa -config config.yaml
 ```
 
 ### Option 2: Build from Source
@@ -51,6 +54,9 @@ go build -o mowa
 
 # Run the server
 ./mowa
+
+# Or with a configuration file
+./mowa -config config.yaml
 ```
 
 ### 2. Test the API
@@ -70,6 +76,14 @@ curl -X POST http://localhost:8080/api/messages \
   -d '{
     "to": ["+1234567890"],
     "message": "Hello from Mowa!"
+  }'
+
+# Send to a message group (if configured)
+curl -X POST http://localhost:8080/api/messages \
+  -H "Content-Type: application/json" \
+  -d '{
+    "to": ["foobar"],
+    "message": "Hello from group!"
   }'
 ```
 
@@ -91,7 +105,7 @@ Returns system uptime information.
 ```
 
 ### POST /api/messages
-Send messages via the Messages app.
+Send messages via the Messages app. Supports both individual recipients and predefined groups.
 
 **Request:**
 ```json
@@ -100,6 +114,16 @@ Send messages via the Messages app.
   "message": "Hello World!"
 }
 ```
+
+**Request with Groups:**
+```json
+{
+  "to": ["foobar", "+1234567890"],
+  "message": "Hello from group!"
+}
+```
+
+If a recipient in the "to" array matches a group name defined in the configuration file, it will be expanded to include all members of that group.
 
 **Response:**
 ```json
@@ -179,11 +203,64 @@ mowa/
 ├── main.go               # Application entry point
 ├── models.go             # Data models and structures
 ├── messages.go           # Message sending logic
+├── config.go             # Configuration management
 ├── uptime.go             # System operations
 └── README.md             # This file
 ```
 
 ## Configuration
+
+### Command Line Options
+
+- **-config**: Path to configuration file (optional)
+  ```bash
+  # Run with configuration file
+  ./mowa -config config.yaml
+  
+  # Run without configuration file
+  ./mowa
+  ```
+
+### Setting Up Message Groups
+
+1. **Create a config file**: Create a `config.yaml` file in your project directory
+2. **Define your groups**: Add your contact groups as shown in the format below
+3. **Start the server**: Use the `-config` flag to load your configuration
+
+Example setup:
+```bash
+# Create your config file
+touch config.yaml
+
+# Edit with your contacts
+nano config.yaml
+
+# Start server with config
+./mowa -config config.yaml
+```
+
+### Configuration File Format
+
+Create a `config.yaml` file in your project directory to define message groups:
+
+```yaml
+messages:
+  groups:
+    foobar:
+      - "+1234567890"
+      - "contact@examples.com"
+    family:
+      - "+1987654321"
+      - "+1555123456"
+    work:
+      - "boss@company.com"
+      - "team@company.com"
+      - "+1555987654"
+```
+
+**Important**: Replace the phone numbers and email addresses with your actual contacts. The `config.yaml` file is automatically ignored by git (via `.gitignore`) to protect your privacy.
+
+When you send a message with `"to": ["foobar"]`, it will automatically expand to send to all members of the "foobar" group.
 
 ### Environment Variables
 

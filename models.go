@@ -2,6 +2,16 @@ package main
 
 
 
+// Config represents the application configuration
+type Config struct {
+	Messages MessagesConfig `yaml:"messages"`
+}
+
+// MessagesConfig represents the messages configuration
+type MessagesConfig struct {
+	Groups map[string][]string `yaml:"groups"`
+}
+
 // MessageRequest represents the request to send messages
 type MessageRequest struct {
 	To      []string `json:"to" binding:"required"`

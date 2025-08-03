@@ -1,6 +1,7 @@
 package main
 
 import (
+	"flag"
 	"log"
 	"net/http"
 	"os"
@@ -11,6 +12,18 @@ import (
 )
 
 func main() {
+	// Parse command line flags
+	var configPath string
+	flag.StringVar(&configPath, "config", "", "Path to configuration file (optional)")
+	flag.Parse()
+
+	// Load configuration
+	var err error
+	appConfig, err = loadConfig(configPath)
+	if err != nil {
+		log.Fatalf("Failed to load configuration: %v", err)
+	}
+
 	// Get port from environment variable or use default 8080
 	port := getPort()
 

@@ -34,8 +34,11 @@ func handleSendMessages(c echo.Context) error {
 		})
 	}
 
+	// Expand groups to individual recipients
+	expandedRecipients := expandGroups(request.To)
+	
 	// Send messages to all recipients
-	results := sendMessages(request.To, request.Message)
+	results := sendMessages(expandedRecipients, request.Message)
 
 	// Return results
 	return c.JSON(http.StatusOK, MessageResponse{Results: results})
