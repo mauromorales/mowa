@@ -1,56 +1,56 @@
 package main
 
 import (
+	"fmt"
 	"net/http"
-	"net/http/httptest"
+	"os"
+	"os/exec"
 	"strings"
 	"testing"
-
-	"github.com/labstack/echo/v4"
+	"time"
 )
 
-
-
-func setupTestServer() *echo.Echo {
-	e := echo.New()
+// This is not an ideal test, but all I care about right now is to check that i don't remove any endpoints by mistake, hence why it's so simple.
+func TestEndToEnd(t *testing.T) {
+	// Start the server in background
+	cmd := exec.Command("go", "run", ".")
+	cmd.Dir = "."
 	
-	// Setup routes
-	e.GET("/", func(c echo.Context) error {
-		return c.String(http.StatusOK, "Mowa API is running! 🚀\n\nAvailable endpoints:\n- POST /api/messages\n- GET /api/uptime")
-	})
+	if err := cmd.Start(); err != nil {
+		t.Fatalf("Failed to start server: %v", err)
+	}
+	defer cmd.Process.Kill()
 	
-	api := e.Group("/api")
-	api.GET("/uptime", handleGetUptime)
-	api.POST("/messages", handleSendMessages)
+	// Wait a bit for server to start
+	time.Sleep(2 * time.Second)
 	
-	return e
-}
-
-
-
-
-
-
-
-func TestHealthCheckEndpoint(t *testing.T) {
-	e := setupTestServer()
+	// Test health check endpoint
+	resp, err := http.Get("http://localhost:8080/")
+	if err != nil {
+		t.Fatalf("Failed to connect to server: %v", err)
+	}
+	defer resp.Body.Close()
 	
-	req := httptest.NewRequest(http.MethodGet, "/", nil)
-	rec := httptest.NewRecorder()
-	
-	e.ServeHTTP(rec, req)
-	
-	// Health check should return 200 OK
-	if rec.Code != http.StatusOK {
-		t.Errorf("Expected status 200, got %d", rec.Code)
+	if resp.StatusCode != http.StatusOK {
+		t.Errorf("Expected status 200, got %d", resp.StatusCode)
 	}
 	
-	// Check that the response contains both endpoints
-	body := rec.Body.String()
-	if !strings.Contains(body, "POST /api/messages") {
-		t.Error("Health check response should list POST /api/messages endpoint")
+	body := make([]byte, 1024)
+	n, _ := resp.Body.Read(body)
+	responseBody := string(body[:n])
+	
+	// Check that all expected endpoints are mentioned
+	expectedEndpoints := []string{
+		"POST /api/messages",
+		"GET /api/uptime",
+		"GET/POST /api/storage",
 	}
-	if !strings.Contains(body, "GET /api/uptime") {
-		t.Error("Health check response should list GET /api/uptime endpoint")
+	
+	for _, endpoint := range expectedEndpoints {
+		if !strings.Contains(responseBody, endpoint) {
+			t.Errorf("Health check should mention endpoint: %s", endpoint)
+		}
 	}
+	
+	fmt.Printf("✅ All endpoints found in health check response\n")
 } 
