@@ -18,6 +18,9 @@ func loadConfig(configPath string) (*Config, error) {
 			Messages: MessagesConfig{
 				Groups: make(map[string][]string),
 			},
+			Storage: StorageConfig{
+				Dir: "./storage", // Default storage directory
+			},
 		}, nil
 	}
 
@@ -38,7 +41,12 @@ func loadConfig(configPath string) (*Config, error) {
 		config.Messages.Groups = make(map[string][]string)
 	}
 
-	log.Printf("Configuration loaded from %s with %d message groups", configPath, len(config.Messages.Groups))
+	// Set default storage directory if not specified
+	if config.Storage.Dir == "" {
+		config.Storage.Dir = "./storage"
+	}
+
+	log.Printf("Configuration loaded from %s with %d message groups and storage dir: %s", configPath, len(config.Messages.Groups), config.Storage.Dir)
 	return &config, nil
 }
 

@@ -49,7 +49,7 @@ func main() {
 
 	// Health check endpoint
 	e.GET("/", func(c echo.Context) error {
-		return c.String(http.StatusOK, "Mowa API is running! 🚀\n\nAvailable endpoints:\n- POST /api/messages\n- GET /api/uptime")
+		return c.String(http.StatusOK, "Mowa API is running! 🚀\n\nAvailable endpoints:\n- POST /api/messages\n- GET /api/uptime\n- GET/POST /api/storage (requires JSON payload with 'path' field)")
 	})
 
 	// API routes
@@ -60,6 +60,10 @@ func main() {
 		
 		// Uptime endpoint
 		api.GET("/uptime", handleGetUptime)
+		
+		// Storage endpoint (GET and POST)
+		api.GET("/storage", handleStorage)
+		api.POST("/storage", handleStorage)
 	}
 
 	// Start server
