@@ -49,3 +49,6 @@ Thumbs.db
 # Configuration files
 config.yaml
 config.yml
+
+# Storage directory
+storage/

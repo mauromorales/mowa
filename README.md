@@ -6,6 +6,7 @@ A Go-native web API server that allows you to interact with macOS and iCloud fea
 
 - **Send Messages**: Send iMessages via the Messages app using AppleScript
 - **System Uptime**: Get system uptime using shell commands
+- **File Storage**: Save and retrieve YAML files with configurable storage directory
 - **Modular Architecture**: Easy to extend with new endpoints for volume control, app launching, etc.
 - **Go Native**: Single binary deployment, no external runtimes required
 - **High Performance**: Compiled Go with Echo web framework
@@ -85,6 +86,21 @@ curl -X POST http://localhost:8080/api/messages \
     "to": ["foobar"],
     "message": "Hello from group!"
   }'
+
+# Save a YAML file
+curl -X POST http://localhost:8080/api/storage \
+  -H "Content-Type: application/json" \
+  -d '{
+    "path": "/config/database.yaml",
+    "content": "database:\n  host: localhost\n  port: 5432"
+  }'
+
+# Retrieve a YAML file
+curl -X GET http://localhost:8080/api/storage \
+  -H "Content-Type: application/json" \
+  -d '{
+    "path": "/config/database.yaml"
+  }'
 ```
 
 ## API Endpoints
@@ -140,6 +156,58 @@ If a recipient in the "to" array matches a group name defined in the configurati
       "error": "Invalid phone number: Phone number must start with +"
     }
   ]
+}
+```
+
+### GET /api/storage
+Retrieve YAML files from the configured storage directory.
+
+**Request:**
+```json
+{
+  "path": "/my/file.yaml"
+}
+```
+
+**Response:**
+```json
+{
+  "success": true,
+  "content": "database:\n  host: localhost\n  port: 5432"
+}
+```
+
+**Error Response (404 Not Found):**
+```json
+{
+  "message": "file not found"
+}
+```
+
+### POST /api/storage
+Save YAML files to the configured storage directory. Creates directories automatically if they don't exist.
+
+**Request:**
+```json
+{
+  "path": "/new/config.yaml",
+  "content": "database:\n  host: localhost\n  port: 5432\n  name: myapp"
+}
+```
+
+**Response:**
+```json
+{
+  "success": true,
+  "content": "File saved successfully to /path/to/storage/new/config.yaml"
+}
+```
+
+**Error Response (400 Bad Request):**
+```json
+{
+  "success": false,
+  "error": "invalid path: contains forbidden characters or directory traversal"
 }
 ```
 
@@ -205,6 +273,7 @@ mowa/
 ├── messages.go           # Message sending logic
 ├── config.go             # Configuration management
 ├── uptime.go             # System operations
+├── storage.go            # File storage operations
 └── README.md             # This file
 ```
 
@@ -241,7 +310,7 @@ nano config.yaml
 
 ### Configuration File Format
 
-Create a `config.yaml` file in your project directory to define message groups:
+Create a `config.yaml` file in your project directory to define message groups and storage settings:
 
 ```yaml
 messages:
@@ -256,6 +325,10 @@ messages:
       - "boss@company.com"
       - "team@company.com"
       - "+1555987654"
+
+storage:
+  dir: "/Users/foobar/some/path"  # Custom storage directory (optional)
+  # Default is "./storage" if not specified
 ```
 
 **Important**: Replace the phone numbers and email addresses with your actual contacts. The `config.yaml` file is automatically ignored by git (via `.gitignore`) to protect your privacy.

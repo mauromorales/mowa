@@ -1,0 +1,14 @@
+# Mowa Configuration Example
+# Copy this file to config.yaml and modify as needed
+
+messages:
+  groups:
+    developers:
+      - "dev1@example.com"
+      - "dev2@example.com"
+    admins:
+      - "admin@example.com"
+
+storage:
+  dir: "/Users/foobar/some/path"  # Custom storage directory
+  # Default is "./storage" if not specified 
