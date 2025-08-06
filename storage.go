@@ -30,7 +30,7 @@ func handleStorage(c echo.Context) error {
 		})
 	}
 
-	return processStorageRequest(c, req.Path, req.Content, false)
+	return processStorageRequest(c, req.Path, req.Content)
 }
 
 // handleStorageWithPath handles storage requests where the path is provided in the URL
@@ -62,11 +62,12 @@ func handleStorageWithPath(c echo.Context) error {
 		})
 	}
 
-	return processStorageRequest(c, path, "", true)
+	// For URL path approach, return raw file content
+	return processStorageRequestRaw(c, path)
 }
 
 // processStorageRequest handles the common logic for storage operations
-func processStorageRequest(c echo.Context, path string, content string, returnFileContent bool) error {
+func processStorageRequest(c echo.Context, path string, content string) error {
 	// Validate path to prevent directory traversal attacks
 	if !isValidPath(path) {
 		return c.JSON(http.StatusBadRequest, StorageResponse{
@@ -107,7 +108,8 @@ func processStorageRequest(c echo.Context, path string, content string, returnFi
 	// Handle based on HTTP method
 	switch c.Request().Method {
 	case http.MethodGet:
-		return handleGetFile(c, absFullPath, returnFileContent)
+		// Return file content in a structured response
+		return handleGetFile(c, absFullPath)
 	case http.MethodPost:
 		return handleSaveFile(c, absFullPath, content)
 	default:
@@ -118,8 +120,39 @@ func processStorageRequest(c echo.Context, path string, content string, returnFi
 	}
 }
 
-// handleGetFile retrieves a file from storage
-func handleGetFile(c echo.Context, fullPath string, returnFileContent bool) error {
+// processStorageRequestRaw handles the common logic for raw file access
+func processStorageRequestRaw(c echo.Context, path string) error {
+	// Validate path to prevent directory traversal attacks
+	if !isValidPath(path) {
+		return echo.NewHTTPError(http.StatusBadRequest, "invalid path: contains forbidden characters or directory traversal")
+	}
+
+	// Construct full file path
+	fullPath := filepath.Join(appConfig.Storage.Dir, path)
+
+	// Ensure the path is within the storage directory
+	storageDir, err := filepath.Abs(appConfig.Storage.Dir)
+	if err != nil {
+		log.Printf("Failed to resolve storage directory %s: %v", appConfig.Storage.Dir, err)
+		return echo.NewHTTPError(http.StatusInternalServerError, "internal server error")
+	}
+
+	absFullPath, err := filepath.Abs(fullPath)
+	if err != nil {
+		log.Printf("Failed to resolve file path %s: %v", fullPath, err)
+		return echo.NewHTTPError(http.StatusInternalServerError, "internal server error")
+	}
+
+	if !strings.HasPrefix(absFullPath, storageDir) {
+		return echo.NewHTTPError(http.StatusBadRequest, "path is outside of storage directory")
+	}
+
+	// Return raw file content
+	return handleGetFileRaw(c, absFullPath)
+}
+
+// handleGetFile retrieves a file from storage and returns a structured response
+func handleGetFile(c echo.Context, fullPath string) error {
 	// Check if file exists
 	if _, err := os.Stat(fullPath); os.IsNotExist(err) {
 		return echo.NewHTTPError(http.StatusNotFound, "file not found")
@@ -130,25 +163,39 @@ func handleGetFile(c echo.Context, fullPath string, returnFileContent bool) erro
 	if err != nil {
 		// Log the real error for debugging, but don't expose it to the client
 		log.Printf("Failed to read file %s: %v", fullPath, err)
-		return c.JSON(http.StatusNotFound, StorageResponse{
+
+		// Since we already checked that the file exists with os.Stat(),
+		// any read error is likely due to permissions, I/O issues, etc.
+		return c.JSON(http.StatusInternalServerError, StorageResponse{
 			Success: false,
-			Error:   "file not found",
+			Error:   "failed to read file",
 		})
 	}
 
-	if returnFileContent {
-		// Return the actual file content
-		return c.JSON(http.StatusOK, StorageResponse{
-			Success: true,
-			Content: string(content),
-		})
-	} else {
-		// Return success message for JSON payload requests
-		return c.JSON(http.StatusOK, StorageResponse{
-			Success: true,
-			Content: "File retrieved successfully",
-		})
+	// Return the actual file content in a structured response
+	return c.JSON(http.StatusOK, StorageResponse{
+		Success: true,
+		Content: string(content),
+	})
+}
+
+// handleGetFileRaw retrieves a file from storage and returns just the content
+func handleGetFileRaw(c echo.Context, fullPath string) error {
+	// Check if file exists
+	if _, err := os.Stat(fullPath); os.IsNotExist(err) {
+		return echo.NewHTTPError(http.StatusNotFound, "file not found")
 	}
+
+	// Read file content
+	content, err := os.ReadFile(fullPath)
+	if err != nil {
+		// Log the real error for debugging, but don't expose it to the client
+		log.Printf("Failed to read file %s: %v", fullPath, err)
+		return echo.NewHTTPError(http.StatusInternalServerError, "failed to read file")
+	}
+
+	// Return just the file content
+	return c.String(http.StatusOK, string(content))
 }
 
 // handleSaveFile saves a file to storage

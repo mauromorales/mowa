@@ -54,8 +54,8 @@ func main() {
 Available endpoints:
 - POST /api/messages
 - GET /api/uptime
-- GET/POST /api/storage (JSON payload: returns success message)
-- GET /api/storage/* (URL path: returns file contents)`
+- GET/POST /api/storage (JSON payload: returns structured response with file content)
+- GET /api/storage/* (URL path: returns raw file content)`
 		return c.String(http.StatusOK, response)
 	})
 
