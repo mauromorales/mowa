@@ -202,7 +202,7 @@ GET /api/storage/my/file.yaml
 }
 ```
 
-**Note:** When using the JSON payload format, the response indicates success but doesn't include the file contents. Use the URL path format to retrieve the actual file contents.
+**Note:** Both the JSON payload format and the URL path format return file contents, but in different formats. The JSON payload format returns the file contents inside a JSON response, while the URL path format returns the raw file content.
 
 ### POST /api/storage
 Save YAML files to the configured storage directory. Creates directories automatically if they don't exist.
