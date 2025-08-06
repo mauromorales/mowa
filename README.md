@@ -177,7 +177,7 @@ Retrieve YAML files from the configured storage directory. Supports two differen
 ```json
 {
   "success": true,
-  "content": "File retrieved successfully"
+  "content": "database:\n  host: localhost\n  port: 5432"
 }
 ```
 
