@@ -30,7 +30,7 @@ func handleStorage(c echo.Context) error {
 		})
 	}
 
-	return processStorageRequest(c, req.Path, req.Content)
+	return processStorageRequest(c, req.Path, req.Content, false)
 }
 
 // handleStorageWithPath handles storage requests where the path is provided in the URL
@@ -62,11 +62,11 @@ func handleStorageWithPath(c echo.Context) error {
 		})
 	}
 
-	return processStorageRequest(c, path, "")
+	return processStorageRequest(c, path, "", true)
 }
 
 // processStorageRequest handles the common logic for storage operations
-func processStorageRequest(c echo.Context, path string, content string) error {
+func processStorageRequest(c echo.Context, path string, content string, returnFileContent bool) error {
 	// Validate path to prevent directory traversal attacks
 	if !isValidPath(path) {
 		return c.JSON(http.StatusBadRequest, StorageResponse{
@@ -107,7 +107,7 @@ func processStorageRequest(c echo.Context, path string, content string) error {
 	// Handle based on HTTP method
 	switch c.Request().Method {
 	case http.MethodGet:
-		return handleGetFile(c, absFullPath)
+		return handleGetFile(c, absFullPath, returnFileContent)
 	case http.MethodPost:
 		return handleSaveFile(c, absFullPath, content)
 	default:
@@ -119,7 +119,7 @@ func processStorageRequest(c echo.Context, path string, content string) error {
 }
 
 // handleGetFile retrieves a file from storage
-func handleGetFile(c echo.Context, fullPath string) error {
+func handleGetFile(c echo.Context, fullPath string, returnFileContent bool) error {
 	// Check if file exists
 	if _, err := os.Stat(fullPath); os.IsNotExist(err) {
 		return echo.NewHTTPError(http.StatusNotFound, "file not found")
@@ -136,10 +136,19 @@ func handleGetFile(c echo.Context, fullPath string) error {
 		})
 	}
 
-	return c.JSON(http.StatusOK, StorageResponse{
-		Success: true,
-		Content: string(content),
-	})
+	if returnFileContent {
+		// Return the actual file content
+		return c.JSON(http.StatusOK, StorageResponse{
+			Success: true,
+			Content: string(content),
+		})
+	} else {
+		// Return success message for JSON payload requests
+		return c.JSON(http.StatusOK, StorageResponse{
+			Success: true,
+			Content: "File retrieved successfully",
+		})
+	}
 }
 
 // handleSaveFile saves a file to storage

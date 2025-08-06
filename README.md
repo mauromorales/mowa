@@ -95,12 +95,15 @@ curl -X POST http://localhost:8080/api/storage \
     "content": "database:\n  host: localhost\n  port: 5432"
   }'
 
-# Retrieve a YAML file
+# Retrieve a YAML file (JSON payload - returns success message)
 curl -X GET http://localhost:8080/api/storage \
   -H "Content-Type: application/json" \
   -d '{
     "path": "/config/database.yaml"
   }'
+
+# Retrieve a YAML file (URL path - returns actual file contents)
+curl -X GET http://localhost:8080/api/storage/config/database.yaml
 ```
 
 ## API Endpoints
@@ -160,16 +163,26 @@ If a recipient in the "to" array matches a group name defined in the configurati
 ```
 
 ### GET /api/storage
-Retrieve YAML files from the configured storage directory.
+Retrieve YAML files from the configured storage directory. Supports two different request formats with different response behaviors.
 
-**Request (JSON payload):**
+#### Option 1: JSON Payload Request
+**Request:**
 ```json
 {
   "path": "/my/file.yaml"
 }
 ```
 
-**Alternative Request (URL path):**
+**Response:**
+```json
+{
+  "success": true,
+  "content": "File retrieved successfully"
+}
+```
+
+#### Option 2: URL Path Request
+**Request:**
 ```
 GET /api/storage/my/file.yaml
 ```
@@ -188,6 +201,8 @@ GET /api/storage/my/file.yaml
   "message": "file not found"
 }
 ```
+
+**Note:** When using the JSON payload format, the response indicates success but doesn't include the file contents. Use the URL path format to retrieve the actual file contents.
 
 ### POST /api/storage
 Save YAML files to the configured storage directory. Creates directories automatically if they don't exist.
