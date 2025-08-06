@@ -1,7 +1,7 @@
 package main
 
 import (
-	"fmt"
+	"log"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -16,9 +16,10 @@ func handleStorage(c echo.Context) error {
 
 	// Parse JSON body for both GET and POST requests
 	if err := c.Bind(&req); err != nil {
+		log.Printf("Failed to parse request body: %v", err)
 		return c.JSON(http.StatusBadRequest, StorageResponse{
 			Success: false,
-			Error:   fmt.Sprintf("invalid request body: %v", err),
+			Error:   "invalid request body",
 		})
 	}
 
@@ -80,17 +81,19 @@ func processStorageRequest(c echo.Context, path string, content string) error {
 	// Ensure the path is within the storage directory
 	storageDir, err := filepath.Abs(appConfig.Storage.Dir)
 	if err != nil {
+		log.Printf("Failed to resolve storage directory %s: %v", appConfig.Storage.Dir, err)
 		return c.JSON(http.StatusInternalServerError, StorageResponse{
 			Success: false,
-			Error:   fmt.Sprintf("failed to resolve storage directory: %v", err),
+			Error:   "internal server error",
 		})
 	}
 
 	absFullPath, err := filepath.Abs(fullPath)
 	if err != nil {
+		log.Printf("Failed to resolve file path %s: %v", fullPath, err)
 		return c.JSON(http.StatusInternalServerError, StorageResponse{
 			Success: false,
-			Error:   fmt.Sprintf("failed to resolve file path: %v", err),
+			Error:   "internal server error",
 		})
 	}
 
@@ -125,9 +128,11 @@ func handleGetFile(c echo.Context, fullPath string) error {
 	// Read file content
 	content, err := os.ReadFile(fullPath)
 	if err != nil {
-		return c.JSON(http.StatusInternalServerError, StorageResponse{
+		// Log the real error for debugging, but don't expose it to the client
+		log.Printf("Failed to read file %s: %v", fullPath, err)
+		return c.JSON(http.StatusNotFound, StorageResponse{
 			Success: false,
-			Error:   fmt.Sprintf("failed to read file: %v", err),
+			Error:   "file not found",
 		})
 	}
 
@@ -142,23 +147,25 @@ func handleSaveFile(c echo.Context, fullPath string, content string) error {
 	// Create directory if it doesn't exist
 	dir := filepath.Dir(fullPath)
 	if err := os.MkdirAll(dir, 0755); err != nil {
+		log.Printf("Failed to create directory %s: %v", dir, err)
 		return c.JSON(http.StatusInternalServerError, StorageResponse{
 			Success: false,
-			Error:   fmt.Sprintf("failed to create directory: %v", err),
+			Error:   "failed to save file",
 		})
 	}
 
 	// Write file content
 	if err := os.WriteFile(fullPath, []byte(content), 0644); err != nil {
+		log.Printf("Failed to write file %s: %v", fullPath, err)
 		return c.JSON(http.StatusInternalServerError, StorageResponse{
 			Success: false,
-			Error:   fmt.Sprintf("failed to write file: %v", err),
+			Error:   "failed to save file",
 		})
 	}
 
 	return c.JSON(http.StatusOK, StorageResponse{
 		Success: true,
-		Content: fmt.Sprintf("File saved successfully to %s", fullPath),
+		Content: "File saved successfully",
 	})
 }
 
