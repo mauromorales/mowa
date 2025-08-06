@@ -34,7 +34,7 @@ func main() {
 
 	// Custom logger configuration for nicer output
 	loggerConfig := middleware.LoggerConfig{
-		Format: "${time_rfc3339} | ${status} | ${latency} | ${remote_ip} | ${method} ${uri}\n",
+		Format:           "${time_rfc3339} | ${status} | ${latency} | ${remote_ip} | ${method} ${uri}\n",
 		CustomTimeFormat: "2006/01/02 15:04:05",
 	}
 
@@ -49,7 +49,7 @@ func main() {
 
 	// Health check endpoint
 	e.GET("/", func(c echo.Context) error {
-		return c.String(http.StatusOK, "Mowa API is running! 🚀\n\nAvailable endpoints:\n- POST /api/messages\n- GET /api/uptime\n- GET/POST /api/storage (requires JSON payload with 'path' field)")
+		return c.String(http.StatusOK, "Mowa API is running! 🚀\n\nAvailable endpoints:\n- POST /api/messages\n- GET /api/uptime\n- GET/POST /api/storage (requires JSON payload with 'path' field)\n- GET /api/storage/* (path in URL, GET only)")
 	})
 
 	// API routes
@@ -57,13 +57,16 @@ func main() {
 	{
 		// Messages endpoint
 		api.POST("/messages", handleSendMessages)
-		
+
 		// Uptime endpoint
 		api.GET("/uptime", handleGetUptime)
-		
-		// Storage endpoint (GET and POST)
+
+		// Storage endpoint (GET and POST) - supports both JSON payload and URL path
 		api.GET("/storage", handleStorage)
 		api.POST("/storage", handleStorage)
+
+		// Storage endpoint with path in URL (GET only)
+		api.GET("/storage/*", handleStorageWithPath)
 	}
 
 	// Start server
@@ -76,12 +79,12 @@ func getPort() int {
 	if portStr == "" {
 		return 8080
 	}
-	
+
 	port, err := strconv.Atoi(portStr)
 	if err != nil {
 		log.Printf("Invalid port %s, using default 8080", portStr)
 		return 8080
 	}
-	
+
 	return port
-} 
+}

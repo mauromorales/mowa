@@ -13,7 +13,7 @@ import (
 // handleStorage handles both GET and POST requests for storage operations
 func handleStorage(c echo.Context) error {
 	var req StorageRequest
-	
+
 	// Parse JSON body for both GET and POST requests
 	if err := c.Bind(&req); err != nil {
 		return c.JSON(http.StatusBadRequest, StorageResponse{
@@ -21,7 +21,7 @@ func handleStorage(c echo.Context) error {
 			Error:   fmt.Sprintf("invalid request body: %v", err),
 		})
 	}
-	
+
 	if req.Path == "" {
 		return c.JSON(http.StatusBadRequest, StorageResponse{
 			Success: false,
@@ -29,8 +29,38 @@ func handleStorage(c echo.Context) error {
 		})
 	}
 
+	return processStorageRequest(c, req.Path, req.Content)
+}
+
+// handleStorageWithPath handles storage requests where the path is provided in the URL
+func handleStorageWithPath(c echo.Context) error {
+	// Extract path from URL parameter
+	pathParam := c.Param("*")
+	if pathParam == "" {
+		return c.JSON(http.StatusBadRequest, StorageResponse{
+			Success: false,
+			Error:   "path is required",
+		})
+	}
+
+	// Ensure path starts with /
+	path := "/" + strings.TrimPrefix(pathParam, "/")
+
+	// Only GET requests are supported for URL path approach
+	if c.Request().Method != http.MethodGet {
+		return c.JSON(http.StatusMethodNotAllowed, StorageResponse{
+			Success: false,
+			Error:   "method not allowed - use POST /api/storage with JSON payload for file creation",
+		})
+	}
+
+	return processStorageRequest(c, path, "")
+}
+
+// processStorageRequest handles the common logic for storage operations
+func processStorageRequest(c echo.Context, path string, content string) error {
 	// Validate path to prevent directory traversal attacks
-	if !isValidPath(req.Path) {
+	if !isValidPath(path) {
 		return c.JSON(http.StatusBadRequest, StorageResponse{
 			Success: false,
 			Error:   "invalid path: contains forbidden characters or directory traversal",
@@ -38,8 +68,8 @@ func handleStorage(c echo.Context) error {
 	}
 
 	// Construct full file path
-	fullPath := filepath.Join(appConfig.Storage.Dir, req.Path)
-	
+	fullPath := filepath.Join(appConfig.Storage.Dir, path)
+
 	// Ensure the path is within the storage directory
 	storageDir, err := filepath.Abs(appConfig.Storage.Dir)
 	if err != nil {
@@ -48,7 +78,7 @@ func handleStorage(c echo.Context) error {
 			Error:   fmt.Sprintf("failed to resolve storage directory: %v", err),
 		})
 	}
-	
+
 	absFullPath, err := filepath.Abs(fullPath)
 	if err != nil {
 		return c.JSON(http.StatusInternalServerError, StorageResponse{
@@ -56,7 +86,7 @@ func handleStorage(c echo.Context) error {
 			Error:   fmt.Sprintf("failed to resolve file path: %v", err),
 		})
 	}
-	
+
 	if !strings.HasPrefix(absFullPath, storageDir) {
 		return c.JSON(http.StatusBadRequest, StorageResponse{
 			Success: false,
@@ -69,7 +99,7 @@ func handleStorage(c echo.Context) error {
 	case http.MethodGet:
 		return handleGetFile(c, absFullPath)
 	case http.MethodPost:
-		return handleSaveFile(c, absFullPath, req.Content)
+		return handleSaveFile(c, absFullPath, content)
 	default:
 		return c.JSON(http.StatusMethodNotAllowed, StorageResponse{
 			Success: false,
@@ -127,16 +157,16 @@ func handleSaveFile(c echo.Context, fullPath string, content string) error {
 
 // isValidPath validates that the path doesn't contain dangerous characters or directory traversal
 func isValidPath(path string) bool {
-	
+
 	// Check for directory traversal attempts
 	if strings.Contains(path, "..") {
 		return false
 	}
-	
+
 	// Ensure path starts with a forward slash
 	if !strings.HasPrefix(path, "/") {
 		return false
 	}
-	
+
 	return true
-} 
+}

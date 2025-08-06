@@ -162,11 +162,16 @@ If a recipient in the "to" array matches a group name defined in the configurati
 ### GET /api/storage
 Retrieve YAML files from the configured storage directory.
 
-**Request:**
+**Request (JSON payload):**
 ```json
 {
   "path": "/my/file.yaml"
 }
+```
+
+**Alternative Request (URL path):**
+```
+GET /api/storage/my/file.yaml
 ```
 
 **Response:**
@@ -187,13 +192,15 @@ Retrieve YAML files from the configured storage directory.
 ### POST /api/storage
 Save YAML files to the configured storage directory. Creates directories automatically if they don't exist.
 
-**Request:**
+**Request (JSON payload):**
 ```json
 {
   "path": "/new/config.yaml",
   "content": "database:\n  host: localhost\n  port: 5432\n  name: myapp"
 }
 ```
+
+
 
 **Response:**
 ```json
