@@ -45,6 +45,13 @@ func handleStorageWithPath(c echo.Context) error {
 
 	// Ensure path starts with /
 	path := "/" + strings.TrimPrefix(pathParam, "/")
+	// Explicitly check for empty normalized path (i.e., "/")
+	if path == "/" {
+		return c.JSON(http.StatusBadRequest, StorageResponse{
+			Success: false,
+			Error:   "path is required",
+		})
+	}
 
 	// Only GET requests are supported for URL path approach
 	if c.Request().Method != http.MethodGet {
