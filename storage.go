@@ -1,7 +1,7 @@
 package main
 
 import (
-	"fmt"
+	"log"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -16,9 +16,10 @@ func handleStorage(c echo.Context) error {
 
 	// Parse JSON body for both GET and POST requests
 	if err := c.Bind(&req); err != nil {
+		log.Printf("Failed to parse request body: %v", err)
 		return c.JSON(http.StatusBadRequest, StorageResponse{
 			Success: false,
-			Error:   fmt.Sprintf("invalid request body: %v", err),
+			Error:   "invalid request body",
 		})
 	}
 
@@ -61,17 +62,15 @@ func handleStorageWithPath(c echo.Context) error {
 		})
 	}
 
-	return processStorageRequest(c, path, "")
+	// For URL path approach, return raw file content
+	return processStorageRequestRaw(c, path)
 }
 
-// processStorageRequest handles the common logic for storage operations
-func processStorageRequest(c echo.Context, path string, content string) error {
+// validateAndResolvePath validates the path and resolves it to an absolute path within the storage directory
+func validateAndResolvePath(path string) (string, error) {
 	// Validate path to prevent directory traversal attacks
 	if !isValidPath(path) {
-		return c.JSON(http.StatusBadRequest, StorageResponse{
-			Success: false,
-			Error:   "invalid path: contains forbidden characters or directory traversal",
-		})
+		return "", echo.NewHTTPError(http.StatusBadRequest, "invalid path: contains forbidden characters or directory traversal")
 	}
 
 	// Construct full file path
@@ -80,30 +79,41 @@ func processStorageRequest(c echo.Context, path string, content string) error {
 	// Ensure the path is within the storage directory
 	storageDir, err := filepath.Abs(appConfig.Storage.Dir)
 	if err != nil {
-		return c.JSON(http.StatusInternalServerError, StorageResponse{
-			Success: false,
-			Error:   fmt.Sprintf("failed to resolve storage directory: %v", err),
-		})
+		log.Printf("Failed to resolve storage directory %s: %v", appConfig.Storage.Dir, err)
+		return "", echo.NewHTTPError(http.StatusInternalServerError, "internal server error")
 	}
 
 	absFullPath, err := filepath.Abs(fullPath)
 	if err != nil {
-		return c.JSON(http.StatusInternalServerError, StorageResponse{
-			Success: false,
-			Error:   fmt.Sprintf("failed to resolve file path: %v", err),
-		})
+		log.Printf("Failed to resolve file path %s: %v", fullPath, err)
+		return "", echo.NewHTTPError(http.StatusInternalServerError, "internal server error")
 	}
 
 	if !strings.HasPrefix(absFullPath, storageDir) {
-		return c.JSON(http.StatusBadRequest, StorageResponse{
-			Success: false,
-			Error:   "path is outside of storage directory",
-		})
+		return "", echo.NewHTTPError(http.StatusBadRequest, "path is outside of storage directory")
+	}
+
+	return absFullPath, nil
+}
+
+// processStorageRequest handles the common logic for storage operations
+func processStorageRequest(c echo.Context, path string, content string) error {
+	absFullPath, err := validateAndResolvePath(path)
+	if err != nil {
+		// Convert echo.NewHTTPError to JSON response for structured API
+		if httpErr, ok := err.(*echo.HTTPError); ok {
+			return c.JSON(httpErr.Code, StorageResponse{
+				Success: false,
+				Error:   httpErr.Message.(string),
+			})
+		}
+		return err
 	}
 
 	// Handle based on HTTP method
 	switch c.Request().Method {
 	case http.MethodGet:
+		// Return file content in a structured response
 		return handleGetFile(c, absFullPath)
 	case http.MethodPost:
 		return handleSaveFile(c, absFullPath, content)
@@ -115,7 +125,19 @@ func processStorageRequest(c echo.Context, path string, content string) error {
 	}
 }
 
-// handleGetFile retrieves a file from storage
+// processStorageRequestRaw handles the common logic for raw file access
+func processStorageRequestRaw(c echo.Context, path string) error {
+	absFullPath, err := validateAndResolvePath(path)
+	if err != nil {
+		// For raw file access, return the error directly (it's already an echo.NewHTTPError)
+		return err
+	}
+
+	// Return raw file content
+	return handleGetFileRaw(c, absFullPath)
+}
+
+// handleGetFile retrieves a file from storage and returns a structured response
 func handleGetFile(c echo.Context, fullPath string) error {
 	// Check if file exists
 	if _, err := os.Stat(fullPath); os.IsNotExist(err) {
@@ -125,16 +147,41 @@ func handleGetFile(c echo.Context, fullPath string) error {
 	// Read file content
 	content, err := os.ReadFile(fullPath)
 	if err != nil {
+		// Log the real error for debugging, but don't expose it to the client
+		log.Printf("Failed to read file %s: %v", fullPath, err)
+
+		// Since we already checked that the file exists with os.Stat(),
+		// any read error is likely due to permissions, I/O issues, etc.
 		return c.JSON(http.StatusInternalServerError, StorageResponse{
 			Success: false,
-			Error:   fmt.Sprintf("failed to read file: %v", err),
+			Error:   "failed to read file",
 		})
 	}
 
+	// Return the actual file content in a structured response
 	return c.JSON(http.StatusOK, StorageResponse{
 		Success: true,
 		Content: string(content),
 	})
+}
+
+// handleGetFileRaw retrieves a file from storage and returns just the content
+func handleGetFileRaw(c echo.Context, fullPath string) error {
+	// Check if file exists
+	if _, err := os.Stat(fullPath); os.IsNotExist(err) {
+		return echo.NewHTTPError(http.StatusNotFound, "file not found")
+	}
+
+	// Read file content
+	content, err := os.ReadFile(fullPath)
+	if err != nil {
+		// Log the real error for debugging, but don't expose it to the client
+		log.Printf("Failed to read file %s: %v", fullPath, err)
+		return echo.NewHTTPError(http.StatusInternalServerError, "failed to read file")
+	}
+
+	// Return just the file content
+	return c.String(http.StatusOK, string(content))
 }
 
 // handleSaveFile saves a file to storage
@@ -142,23 +189,25 @@ func handleSaveFile(c echo.Context, fullPath string, content string) error {
 	// Create directory if it doesn't exist
 	dir := filepath.Dir(fullPath)
 	if err := os.MkdirAll(dir, 0755); err != nil {
+		log.Printf("Failed to create directory %s: %v", dir, err)
 		return c.JSON(http.StatusInternalServerError, StorageResponse{
 			Success: false,
-			Error:   fmt.Sprintf("failed to create directory: %v", err),
+			Error:   "failed to save file",
 		})
 	}
 
 	// Write file content
 	if err := os.WriteFile(fullPath, []byte(content), 0644); err != nil {
+		log.Printf("Failed to write file %s: %v", fullPath, err)
 		return c.JSON(http.StatusInternalServerError, StorageResponse{
 			Success: false,
-			Error:   fmt.Sprintf("failed to write file: %v", err),
+			Error:   "failed to save file",
 		})
 	}
 
 	return c.JSON(http.StatusOK, StorageResponse{
 		Success: true,
-		Content: fmt.Sprintf("File saved successfully to %s", fullPath),
+		Content: "File saved successfully",
 	})
 }
 
