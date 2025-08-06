@@ -66,14 +66,11 @@ func handleStorageWithPath(c echo.Context) error {
 	return processStorageRequestRaw(c, path)
 }
 
-// processStorageRequest handles the common logic for storage operations
-func processStorageRequest(c echo.Context, path string, content string) error {
+// validateAndResolvePath validates the path and resolves it to an absolute path within the storage directory
+func validateAndResolvePath(path string) (string, error) {
 	// Validate path to prevent directory traversal attacks
 	if !isValidPath(path) {
-		return c.JSON(http.StatusBadRequest, StorageResponse{
-			Success: false,
-			Error:   "invalid path: contains forbidden characters or directory traversal",
-		})
+		return "", echo.NewHTTPError(http.StatusBadRequest, "invalid path: contains forbidden characters or directory traversal")
 	}
 
 	// Construct full file path
@@ -83,26 +80,34 @@ func processStorageRequest(c echo.Context, path string, content string) error {
 	storageDir, err := filepath.Abs(appConfig.Storage.Dir)
 	if err != nil {
 		log.Printf("Failed to resolve storage directory %s: %v", appConfig.Storage.Dir, err)
-		return c.JSON(http.StatusInternalServerError, StorageResponse{
-			Success: false,
-			Error:   "internal server error",
-		})
+		return "", echo.NewHTTPError(http.StatusInternalServerError, "internal server error")
 	}
 
 	absFullPath, err := filepath.Abs(fullPath)
 	if err != nil {
 		log.Printf("Failed to resolve file path %s: %v", fullPath, err)
-		return c.JSON(http.StatusInternalServerError, StorageResponse{
-			Success: false,
-			Error:   "internal server error",
-		})
+		return "", echo.NewHTTPError(http.StatusInternalServerError, "internal server error")
 	}
 
 	if !strings.HasPrefix(absFullPath, storageDir) {
-		return c.JSON(http.StatusBadRequest, StorageResponse{
-			Success: false,
-			Error:   "path is outside of storage directory",
-		})
+		return "", echo.NewHTTPError(http.StatusBadRequest, "path is outside of storage directory")
+	}
+
+	return absFullPath, nil
+}
+
+// processStorageRequest handles the common logic for storage operations
+func processStorageRequest(c echo.Context, path string, content string) error {
+	absFullPath, err := validateAndResolvePath(path)
+	if err != nil {
+		// Convert echo.NewHTTPError to JSON response for structured API
+		if httpErr, ok := err.(*echo.HTTPError); ok {
+			return c.JSON(httpErr.Code, StorageResponse{
+				Success: false,
+				Error:   httpErr.Message.(string),
+			})
+		}
+		return err
 	}
 
 	// Handle based on HTTP method
@@ -122,29 +127,10 @@ func processStorageRequest(c echo.Context, path string, content string) error {
 
 // processStorageRequestRaw handles the common logic for raw file access
 func processStorageRequestRaw(c echo.Context, path string) error {
-	// Validate path to prevent directory traversal attacks
-	if !isValidPath(path) {
-		return echo.NewHTTPError(http.StatusBadRequest, "invalid path: contains forbidden characters or directory traversal")
-	}
-
-	// Construct full file path
-	fullPath := filepath.Join(appConfig.Storage.Dir, path)
-
-	// Ensure the path is within the storage directory
-	storageDir, err := filepath.Abs(appConfig.Storage.Dir)
+	absFullPath, err := validateAndResolvePath(path)
 	if err != nil {
-		log.Printf("Failed to resolve storage directory %s: %v", appConfig.Storage.Dir, err)
-		return echo.NewHTTPError(http.StatusInternalServerError, "internal server error")
-	}
-
-	absFullPath, err := filepath.Abs(fullPath)
-	if err != nil {
-		log.Printf("Failed to resolve file path %s: %v", fullPath, err)
-		return echo.NewHTTPError(http.StatusInternalServerError, "internal server error")
-	}
-
-	if !strings.HasPrefix(absFullPath, storageDir) {
-		return echo.NewHTTPError(http.StatusBadRequest, "path is outside of storage directory")
+		// For raw file access, return the error directly (it's already an echo.NewHTTPError)
+		return err
 	}
 
 	// Return raw file content
