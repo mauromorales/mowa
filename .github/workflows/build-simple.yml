@@ -1,0 +1,34 @@
+name: Simple Build Test
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  build:
+    runs-on: macos-15
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      
+    - name: Set up Go
+      uses: actions/setup-go@v4
+      with:
+        go-version: '1.23'
+        
+    - name: Install swag
+      run: go install github.com/swaggo/swag/cmd/swag@latest
+      
+    - name: Generate Swagger documentation
+      run: swag init
+      
+    - name: Build project
+      run: go build -o mowa
+      
+    - name: Verify binary
+      run: |
+        echo "Binary size: $(ls -lh mowa)"
+        strings mowa | grep -q "swagger" && echo "✅ Binary contains swagger data"

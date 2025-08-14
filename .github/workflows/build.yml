@@ -1,0 +1,82 @@
+name: Build on macOS
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  build:
+    runs-on: macos-15
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      
+    - name: Set up Go
+      uses: actions/setup-go@v4
+      with:
+        go-version: '1.23'
+        
+    - name: Debug Go environment
+      run: |
+        echo "Go version: $(go version)"
+        echo "Go env:"
+        go env
+        echo "Current directory: $(pwd)"
+        echo "Directory contents:"
+        ls -la
+        
+    # Cache disabled due to gtar errors
+    # - name: Cache Go modules
+    #   uses: actions/cache@v4
+    #   with:
+    #     path: |
+    #       ~/.cache/go-build
+    #       ~/go/pkg/mod
+    #     key: ${{ runner.os }}-go-${{ hashFiles('**/go.sum') }}
+    #     restore-keys: |
+    #       ${{ runner.os }}-go-
+          
+    - name: Clear environment and download dependencies
+      run: |
+        echo "Clearing Go cache..."
+        go clean -cache -modcache -testcache
+        echo "Downloading dependencies..."
+        go mod download
+        go mod verify
+      
+    - name: Install swag
+      run: go install github.com/swaggo/swag/cmd/swag@latest
+      
+    - name: Generate Swagger documentation
+      run: |
+        echo "Cleaning docs directory..."
+        rm -rf docs/
+        mkdir -p docs/
+        echo "Generating swagger documentation..."
+        swag init
+        echo "Checking generated files..."
+        ls -la docs/
+      
+    - name: Verify Swagger files
+      run: |
+        echo "Checking generated swagger files..."
+        ls -la docs/
+        test -f docs/swagger.json
+        test -f docs/swagger.yaml
+        test -f docs/docs.go
+        echo "✅ Swagger files generated successfully"
+      
+    - name: Build project
+      run: |
+        echo "Building with embedded swagger files..."
+        go build -o mowa
+        echo "✅ Build completed successfully"
+      
+    - name: Verify binary contains swagger data
+      run: |
+        echo "Verifying binary contains swagger data..."
+        strings mowa | grep -q "swagger" && echo "✅ Binary contains swagger data"
+        echo "✅ Build verification completed"

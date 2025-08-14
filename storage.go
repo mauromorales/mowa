@@ -1,6 +1,7 @@
 package main
 
 import (
+	"fmt"
 	"log"
 	"net/http"
 	"os"
@@ -10,7 +11,18 @@ import (
 	"github.com/labstack/echo/v4"
 )
 
-// handleStorage handles both GET and POST requests for storage operations
+// @Summary Handle storage operations
+// @Description Handle both GET and POST requests for storage operations with JSON payload. Optionally send notifications about operation results via iMessage.
+// @Tags storage
+// @Accept json
+// @Produce json
+// @Param request body StorageRequest true "Storage request"
+// @Success 200 {object} StorageResponse "Storage operation completed successfully"
+// @Failure 400 {object} StorageResponse "Bad request - invalid input"
+// @Failure 404 {object} StorageResponse "File not found"
+// @Failure 500 {object} StorageResponse "Internal server error"
+// @Router /api/storage [get]
+// @Router /api/storage [post]
 func handleStorage(c echo.Context) error {
 	var req StorageRequest
 
@@ -30,10 +42,27 @@ func handleStorage(c echo.Context) error {
 		})
 	}
 
-	return processStorageRequest(c, req.Path, req.Content)
+	// Validate notify field - if provided, it must not be empty
+	if req.Notify != nil && len(req.Notify) == 0 {
+		return c.JSON(http.StatusBadRequest, StorageResponse{
+			Success: false,
+			Error:   "notify field cannot be empty - either omit it or provide at least one recipient",
+		})
+	}
+
+	return processStorageRequest(c, req.Path, req.Content, req.Notify)
 }
 
-// handleStorageWithPath handles storage requests where the path is provided in the URL
+// @Summary Handle storage operations with URL path
+// @Description Handle GET requests for storage operations where path is provided in URL
+// @Tags storage
+// @Produce text/plain
+// @Param path path string true "File path" default(/example.txt)
+// @Success 200 {string} string "File content"
+// @Failure 400 {object} StorageResponse "Bad request - invalid path"
+// @Failure 404 {object} StorageResponse "File not found"
+// @Failure 500 {object} StorageResponse "Internal server error"
+// @Router /api/storage/{path} [get]
 func handleStorageWithPath(c echo.Context) error {
 	// Extract path from URL parameter
 	pathParam := c.Param("*")
@@ -97,7 +126,7 @@ func validateAndResolvePath(path string) (string, error) {
 }
 
 // processStorageRequest handles the common logic for storage operations
-func processStorageRequest(c echo.Context, path string, content string) error {
+func processStorageRequest(c echo.Context, path string, content string, notify []string) error {
 	absFullPath, err := validateAndResolvePath(path)
 	if err != nil {
 		// Convert echo.NewHTTPError to JSON response for structured API
@@ -114,9 +143,9 @@ func processStorageRequest(c echo.Context, path string, content string) error {
 	switch c.Request().Method {
 	case http.MethodGet:
 		// Return file content in a structured response
-		return handleGetFile(c, absFullPath)
+		return handleGetFile(c, absFullPath, notify)
 	case http.MethodPost:
-		return handleSaveFile(c, absFullPath, content)
+		return handleSaveFile(c, absFullPath, content, notify)
 	default:
 		return c.JSON(http.StatusMethodNotAllowed, StorageResponse{
 			Success: false,
@@ -138,9 +167,13 @@ func processStorageRequestRaw(c echo.Context, path string) error {
 }
 
 // handleGetFile retrieves a file from storage and returns a structured response
-func handleGetFile(c echo.Context, fullPath string) error {
+func handleGetFile(c echo.Context, fullPath string, notify []string) error {
 	// Check if file exists
 	if _, err := os.Stat(fullPath); os.IsNotExist(err) {
+		// Send notification if requested
+		if len(notify) > 0 {
+			go sendStorageNotification(notify, "GET", fullPath, false, "find file")
+		}
 		return echo.NewHTTPError(http.StatusNotFound, "file not found")
 	}
 
@@ -152,17 +185,31 @@ func handleGetFile(c echo.Context, fullPath string) error {
 
 		// Since we already checked that the file exists with os.Stat(),
 		// any read error is likely due to permissions, I/O issues, etc.
-		return c.JSON(http.StatusInternalServerError, StorageResponse{
+		response := StorageResponse{
 			Success: false,
 			Error:   "failed to read file",
-		})
+		}
+
+		// Send notification if requested
+		if len(notify) > 0 {
+			go sendStorageNotification(notify, "GET", fullPath, false, "read file")
+		}
+
+		return c.JSON(http.StatusInternalServerError, response)
 	}
 
 	// Return the actual file content in a structured response
-	return c.JSON(http.StatusOK, StorageResponse{
+	response := StorageResponse{
 		Success: true,
 		Content: string(content),
-	})
+	}
+
+	// Send notification if requested
+	if len(notify) > 0 {
+		go sendStorageNotification(notify, "GET", fullPath, true, "retrieved successfully")
+	}
+
+	return c.JSON(http.StatusOK, response)
 }
 
 // handleGetFileRaw retrieves a file from storage and returns just the content
@@ -185,30 +232,51 @@ func handleGetFileRaw(c echo.Context, fullPath string) error {
 }
 
 // handleSaveFile saves a file to storage
-func handleSaveFile(c echo.Context, fullPath string, content string) error {
+func handleSaveFile(c echo.Context, fullPath string, content string, notify []string) error {
 	// Create directory if it doesn't exist
 	dir := filepath.Dir(fullPath)
 	if err := os.MkdirAll(dir, 0755); err != nil {
 		log.Printf("Failed to create directory %s: %v", dir, err)
-		return c.JSON(http.StatusInternalServerError, StorageResponse{
+		response := StorageResponse{
 			Success: false,
 			Error:   "failed to save file",
-		})
+		}
+
+		// Send notification if requested
+		if len(notify) > 0 {
+			go sendStorageNotification(notify, "POST", fullPath, false, "create directory")
+		}
+
+		return c.JSON(http.StatusInternalServerError, response)
 	}
 
 	// Write file content
 	if err := os.WriteFile(fullPath, []byte(content), 0644); err != nil {
 		log.Printf("Failed to write file %s: %v", fullPath, err)
-		return c.JSON(http.StatusInternalServerError, StorageResponse{
+		response := StorageResponse{
 			Success: false,
 			Error:   "failed to save file",
-		})
+		}
+
+		// Send notification if requested
+		if len(notify) > 0 {
+			go sendStorageNotification(notify, "POST", fullPath, false, "write file")
+		}
+
+		return c.JSON(http.StatusInternalServerError, response)
 	}
 
-	return c.JSON(http.StatusOK, StorageResponse{
+	response := StorageResponse{
 		Success: true,
 		Content: "File saved successfully",
-	})
+	}
+
+	// Send notification if requested
+	if len(notify) > 0 {
+		go sendStorageNotification(notify, "POST", fullPath, true, "saved successfully")
+	}
+
+	return c.JSON(http.StatusOK, response)
 }
 
 // isValidPath validates that the path doesn't contain dangerous characters or directory traversal
@@ -225,4 +293,35 @@ func isValidPath(path string) bool {
 	}
 
 	return true
+}
+
+// sendStorageNotification sends a notification about storage operations
+func sendStorageNotification(notify []string, operation string, filePath string, success bool, message string) {
+	if len(notify) == 0 {
+		return
+	}
+
+	// Expand groups to individual recipients
+	expandedRecipients := expandGroups(notify)
+
+	// Create notification message
+	var notificationMessage string
+	fileName := filepath.Base(filePath)
+	if success {
+		notificationMessage = fmt.Sprintf("%s %s", fileName, message)
+	} else {
+		notificationMessage = fmt.Sprintf("Failed to %s %s: %s", operation, fileName, message)
+	}
+
+	// Send messages to all recipients
+	results := sendMessages(expandedRecipients, notificationMessage)
+
+	// Log the notification results
+	for _, result := range results {
+		if result.Success {
+			log.Printf("Storage notification sent successfully to %s", result.Recipient)
+		} else {
+			log.Printf("Failed to send storage notification to %s: %s", result.Recipient, *result.Error)
+		}
+	}
 }

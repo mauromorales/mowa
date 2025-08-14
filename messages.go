@@ -11,7 +11,16 @@ import (
 	"github.com/labstack/echo/v4"
 )
 
-// handleSendMessages handles the POST /api/messages endpoint
+// @Summary Send messages to recipients
+// @Description Send messages to one or more recipients via iMessage
+// @Tags messages
+// @Accept json
+// @Produce json
+// @Param request body MessageRequest true "Message request"
+// @Success 200 {object} MessageResponse "Messages sent successfully"
+// @Failure 400 {object} map[string]interface{} "Bad request - invalid input"
+// @Failure 500 {object} map[string]interface{} "Internal server error"
+// @Router /api/messages [post]
 func handleSendMessages(c echo.Context) error {
 	var request MessageRequest
 	if err := c.Bind(&request); err != nil {
@@ -36,7 +45,7 @@ func handleSendMessages(c echo.Context) error {
 
 	// Expand groups to individual recipients
 	expandedRecipients := expandGroups(request.To)
-	
+
 	// Send messages to all recipients
 	results := sendMessages(expandedRecipients, request.Message)
 
@@ -97,7 +106,7 @@ end tell
 // executeAppleScript executes an AppleScript and returns any error
 func executeAppleScript(script string) error {
 	cmd := exec.Command("osascript", "-e", script)
-	
+
 	output, err := cmd.CombinedOutput()
 	if err != nil {
 		log.Printf("AppleScript failed with error: %v", err)
@@ -138,4 +147,4 @@ func validatePhoneNumber(phoneNumber string) error {
 	}
 
 	return nil
-} 
+}

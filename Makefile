@@ -1,8 +1,14 @@
 .PHONY: build run clean test deps
 
 # Build the application
-build:
+build: generate-docs
 	go build -ldflags="-s -w" -o mowa
+
+# Generate Swagger documentation
+generate-docs:
+	@echo "🔄 Generating Swagger documentation..."
+	@chmod +x scripts/generate-docs.sh
+	@./scripts/generate-docs.sh
 
 # Run the application
 run:
@@ -20,16 +26,14 @@ deps:
 # Clean build artifacts
 clean:
 	rm -f mowa
-	rm -f mowa-*
 
 # Run tests
 test:
 	go test ./...
 
 # Build for different platforms
-build-all: build
-	GOOS=linux GOARCH=amd64 go build -ldflags="-s -w" -o mowa-linux
-	GOOS=windows GOARCH=amd64 go build -ldflags="-s -w" -o mowa.exe
+build-all: generate-docs
+	go build -ldflags="-s -w" -o mowa
 
 # Development mode with hot reload (requires air)
 dev:

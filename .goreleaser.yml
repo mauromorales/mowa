@@ -1,6 +1,10 @@
 before:
   hooks:
     - go mod tidy
+    - go install github.com/swaggo/swag/cmd/swag@latest
+    - swag init
+    - echo "Swagger files generated:"
+    - ls -la docs/
 
 builds:
   - env:
