@@ -1,6 +1,7 @@
 package main
 
 import (
+	"embed"
 	"flag"
 	"log"
 	"net/http"
@@ -13,6 +14,9 @@ import (
 	"github.com/labstack/echo/v4/middleware"
 	echoSwagger "github.com/swaggo/echo-swagger"
 )
+
+//go:embed docs/swagger.json docs/swagger.yaml assets/mowa-logo.png
+var embeddedFiles embed.FS
 
 // @title Mowa API
 // @version 1.0
@@ -190,12 +194,31 @@ func main() {
 		return c.HTML(http.StatusOK, html)
 	})
 
-	// Serve static assets (logo)
-	e.Static("/assets", "assets")
+	// Serve embedded static assets (logo)
+	e.GET("/assets/mowa-logo.png", func(c echo.Context) error {
+		logoData, err := embeddedFiles.ReadFile("assets/mowa-logo.png")
+		if err != nil {
+			return c.String(http.StatusNotFound, "Logo not found")
+		}
+		return c.Blob(http.StatusOK, "image/png", logoData)
+	})
 
-	// Serve swagger.json
+	// Serve embedded swagger.json
 	e.GET("/swagger/doc.json", func(c echo.Context) error {
-		return c.File("docs/swagger.json")
+		swaggerData, err := embeddedFiles.ReadFile("docs/swagger.json")
+		if err != nil {
+			return c.String(http.StatusNotFound, "Swagger JSON not found")
+		}
+		return c.Blob(http.StatusOK, "application/json", swaggerData)
+	})
+
+	// Serve embedded swagger.yaml
+	e.GET("/swagger/doc.yaml", func(c echo.Context) error {
+		swaggerData, err := embeddedFiles.ReadFile("docs/swagger.yaml")
+		if err != nil {
+			return c.String(http.StatusNotFound, "Swagger YAML not found")
+		}
+		return c.Blob(http.StatusOK, "application/x-yaml", swaggerData)
 	})
 
 	// Swagger documentation (for other swagger assets)

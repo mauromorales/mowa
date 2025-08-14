@@ -69,6 +69,9 @@ type StorageRequest struct {
 	// @Description File content (required for POST operations)
 	// @Example "Hello, this is file content!"
 	Content string `json:"content,omitempty"`
+	// @Description List of phone numbers or group names to notify about the operation result
+	// @Example ["some-group", "+1234567890"]
+	Notify []string `json:"notify,omitempty"`
 }
 
 // StorageResponse represents the response from storage operations

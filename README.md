@@ -12,6 +12,7 @@ A Go-native web API server that allows you to interact with MacOS and iCloud fea
 - **Modular Architecture**: Easy to extend with new endpoints for volume control, app launching, etc.
 - **Go Native**: Single binary deployment, no external runtimes required
 - **High Performance**: Compiled Go with Echo web framework
+- **Embedded Documentation**: Swagger JSON and YAML files are embedded in the binary
 
 ## Quick Start
 
@@ -55,7 +56,11 @@ xattr -d com.apple.quarantine mowa
 git clone <your-repo-url>
 cd mowa
 
-# Build the project
+# Build the project (includes Swagger documentation generation)
+make build
+
+# Or build manually with docs generation
+./scripts/generate-docs.sh
 go build -o mowa
 
 # Run the server
@@ -75,6 +80,12 @@ curl -L http://localhost:8080/
 
 # Or access Swagger UI directly
 open http://localhost:8080/swagger/index.html
+
+# Access embedded Swagger documentation (JSON format)
+curl http://localhost:8080/swagger/doc.json
+
+# Access embedded Swagger documentation (YAML format)
+curl http://localhost:8080/swagger/doc.yaml
 
 # Get system uptime
 curl http://localhost:8080/api/uptime
