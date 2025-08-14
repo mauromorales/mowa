@@ -1,6 +1,8 @@
-# Mowa - macOS Web API
+# mowa - MacOS Web API
 
-A Go-native web API server that allows you to interact with macOS and iCloud features remotely via HTTP. Built with Echo framework for maximum performance and easy deployment.
+![mowa logo](/assets/mowa-logo.png)
+
+A Go-native web API server that allows you to interact with MacOS and iCloud features remotely via HTTP. Built with Echo framework for maximum performance and easy deployment.
 
 ## Features
 
@@ -11,12 +13,10 @@ A Go-native web API server that allows you to interact with macOS and iCloud fea
 - **Go Native**: Single binary deployment, no external runtimes required
 - **High Performance**: Compiled Go with Echo web framework
 
-## Requirements
-
-- macOS 10.15 or later
-- Go 1.21 or later
-
 ## Quick Start
+
+> [!CAUTION]
+> When interacting with other applications for the first time e.g. messages, MacOS will open a pop up requesting for permissions. You must grant these in order for mowa to work as expected.
 
 ### Option 1: Download Pre-built Binary (Recommended)
 
@@ -42,6 +42,11 @@ xattr -d com.apple.quarantine mowa
 # Or with a configuration file
 ./mowa -config config.yaml
 ```
+
+**Important**: On first run, macOS may block mowa from running or accessing other applications. You'll need to:
+1. **Allow mowa to run**: Go to System Preferences → Security & Privacy → General, and click "Allow Anyway" for mowa
+2. **Grant accessibility permissions**: Go to System Preferences → Security & Privacy → Privacy → Accessibility, and add mowa to the list of allowed applications
+3. **Grant automation permissions**: For Messages functionality, go to System Preferences → Security & Privacy → Privacy → Automation, and ensure mowa has access to Messages
 
 ### Option 2: Build from Source
 
@@ -105,6 +110,70 @@ curl -X GET http://localhost:8080/api/storage \
 # Retrieve a YAML file (URL path - returns actual file contents)
 curl -X GET http://localhost:8080/api/storage/config/database.yaml
 ```
+
+## Installing as a Service
+
+To run mowa as a background service that starts automatically on system boot, you can create a LaunchDaemon plist file.
+
+1. **Create the plist file**:
+   ```bash
+   # Create the LaunchAgents directory if it doesn't exist
+   mkdir -p ~/Library/LaunchAgents
+   
+   # Create the plist file
+   cat > ~/Library/LaunchAgents/com.mauromorales.mowa.plist << 'EOF'
+   <?xml version="1.0" encoding="UTF-8"?>
+   <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+   <plist version="1.0">
+   <dict>
+       <key>Label</key>
+       <string>com.mauromorales.mowa</string>
+       <key>ProgramArguments</key>
+       <array>
+           <string>/path/to/your/mowa</string>
+           <string>-config</string>
+           <string>/path/to/your/config.yaml</string>
+       </array>
+       <key>RunAtLoad</key>
+       <true/>
+       <key>KeepAlive</key>
+       <true/>
+       <key>StandardOutPath</key>
+       <string>/Library/Logs/mowa.log</string>
+       <key>StandardErrorPath</key>
+       <string>/Library/Logs/mowa_error.log</string>
+       <key>WorkingDirectory</key>
+       <string>/path/to/your/mowa/directory</string>
+   </dict>
+   </plist>
+   EOF
+   ```
+
+2. **Update the paths** in the plist file:
+   - Replace `/path/to/your/mowa` with the actual path to your mowa binary
+   - Replace `/path/to/your/config.yaml` with the actual path to your config file
+   - Replace `/path/to/your/mowa/directory` with the directory containing your mowa binary
+
+3. **Load the service**:
+   ```bash
+   launchctl load ~/Library/LaunchAgents/com.mowa.plist
+   
+   # Check if it's running
+   launchctl list | grep mowa
+   ```
+
+4. **Manage the service**:
+   ```bash
+   # Stop the service
+   launchctl stop com.mowa
+   
+   # Unload the service
+   launchctl unload ~/Library/LaunchAgents/com.mowa.plist
+   
+   # View logs
+   tail -f /Library/Logs/mowa.log
+   tail -f /Library/Logs/mowa_error.log
+   ```
 
 ## API Endpoints
 
@@ -215,8 +284,6 @@ Save YAML files to the configured storage directory. Creates directories automat
 }
 ```
 
-
-
 **Response:**
 ```json
 {
@@ -283,21 +350,6 @@ Save YAML files to the configured storage directory. Creates directories automat
    # With custom port
    MOWA_PORT=3000 go run .
    ```
-
-## Project Structure
-
-```
-mowa/
-├── go.mod                 # Go module file
-├── go.sum                 # Go dependencies checksum
-├── main.go               # Application entry point
-├── models.go             # Data models and structures
-├── messages.go           # Message sending logic
-├── config.go             # Configuration management
-├── uptime.go             # System operations
-├── storage.go            # File storage operations
-└── README.md             # This file
-```
 
 ## Configuration
 
@@ -438,8 +490,11 @@ go build -ldflags="-s -w" -o mowa
 
 ### Common Issues
 
-1. **Permission Denied**: Make sure the Messages app has necessary permissions
-2. **AppleScript Errors**: Verify that the Messages app is installed and accessible
+1. **Permission Denied**: Make sure mowa has been granted the necessary permissions in System Preferences:
+   - **General**: Allow mowa to run (Security & Privacy → General)
+   - **Accessibility**: Add mowa to allowed applications (Security & Privacy → Privacy → Accessibility)
+   - **Automation**: Grant mowa access to Messages (Security & Privacy → Privacy → Automation)
+2. **AppleScript Errors**: Verify that the Messages app is installed and accessible, and that mowa has automation permissions
 3. **Port Already in Use**: Change the port using MOWA_PORT environment variable
 
 ### Debug Mode
