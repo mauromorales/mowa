@@ -22,11 +22,21 @@ jobs:
         with:
           go-version: '1.23'
       
+      - name: Clear cache and install dependencies
+        run: |
+          go clean -cache
+          go mod download
+          go mod verify
+      
       - name: Install swag
         run: go install github.com/swaggo/swag/cmd/swag@latest
       
       - name: Generate Swagger documentation
-        run: swag init
+        run: |
+          echo "Cleaning docs directory..."
+          rm -rf docs/
+          echo "Generating swagger documentation..."
+          swag init
       
       - name: Verify Swagger files
         run: |
