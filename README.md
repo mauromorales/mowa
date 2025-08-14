@@ -70,8 +70,11 @@ go build -o mowa
 The server will start on `http://localhost:8080` by default. You can test it with:
 
 ```bash
-# Health check
-curl http://localhost:8080
+# Access API documentation (redirects from root)
+curl -L http://localhost:8080/
+
+# Or access Swagger UI directly
+open http://localhost:8080/swagger/index.html
 
 # Get system uptime
 curl http://localhost:8080/api/uptime
@@ -175,10 +178,38 @@ To run mowa as a background service that starts automatically on system boot, yo
    tail -f /Library/Logs/mowa_error.log
    ```
 
+## API Documentation
+
+### Swagger UI
+The API includes comprehensive Swagger documentation that can be accessed at:
+```
+http://localhost:8080/swagger/index.html
+```
+
+**Note**: The root endpoint (`/`) automatically redirects to the Swagger documentation for convenience.
+
+This interactive documentation allows you to:
+- Explore all available endpoints
+- Test API calls directly from the browser
+- View request/response schemas
+- See example requests and responses
+
+### Regenerating Documentation
+To regenerate the Swagger documentation after making changes to the API:
+
+```bash
+# Using the provided script
+./scripts/generate-docs.sh
+
+# Or manually
+export PATH=$PATH:$(go env GOPATH)/bin
+swag init
+```
+
 ## API Endpoints
 
 ### GET /
-Health check endpoint that returns available endpoints.
+Root endpoint that redirects to the Swagger documentation at `/swagger/index.html`.
 
 ### GET /api/uptime
 Returns system uptime information.

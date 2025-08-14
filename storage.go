@@ -10,7 +10,18 @@ import (
 	"github.com/labstack/echo/v4"
 )
 
-// handleStorage handles both GET and POST requests for storage operations
+// @Summary Handle storage operations
+// @Description Handle both GET and POST requests for storage operations with JSON payload
+// @Tags storage
+// @Accept json
+// @Produce json
+// @Param request body StorageRequest true "Storage request"
+// @Success 200 {object} StorageResponse "Storage operation completed successfully"
+// @Failure 400 {object} StorageResponse "Bad request - invalid input"
+// @Failure 404 {object} StorageResponse "File not found"
+// @Failure 500 {object} StorageResponse "Internal server error"
+// @Router /api/storage [get]
+// @Router /api/storage [post]
 func handleStorage(c echo.Context) error {
 	var req StorageRequest
 
@@ -33,7 +44,16 @@ func handleStorage(c echo.Context) error {
 	return processStorageRequest(c, req.Path, req.Content)
 }
 
-// handleStorageWithPath handles storage requests where the path is provided in the URL
+// @Summary Handle storage operations with URL path
+// @Description Handle GET requests for storage operations where path is provided in URL
+// @Tags storage
+// @Produce text/plain
+// @Param path path string true "File path" default(/example.txt)
+// @Success 200 {string} string "File content"
+// @Failure 400 {object} StorageResponse "Bad request - invalid path"
+// @Failure 404 {object} StorageResponse "File not found"
+// @Failure 500 {object} StorageResponse "Internal server error"
+// @Router /api/storage/{path} [get]
 func handleStorageWithPath(c echo.Context) error {
 	// Extract path from URL parameter
 	pathParam := c.Param("*")

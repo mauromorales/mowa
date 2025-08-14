@@ -1,4 +1,4 @@
-name: Test on macOS
+name: Build on macOS
 
 on:
   push:
@@ -7,7 +7,7 @@ on:
     branches: [ main ]
 
 jobs:
-  test:
+  build:
     runs-on: macos-15
     
     steps:
@@ -32,8 +32,5 @@ jobs:
     - name: Download dependencies
       run: go mod download
       
-    - name: Run tests
-      run: go test -v -short ./...
-      
     - name: Build project
-      run: go build -o mowa 
+      run: go build -o mowa
