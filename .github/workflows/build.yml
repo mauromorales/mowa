@@ -48,7 +48,10 @@ jobs:
         echo "✅ Swagger files generated successfully"
       
     - name: Build project
-      run: go build -o mowa
+      run: |
+        echo "Building with embedded swagger files..."
+        go build -o mowa
+        echo "✅ Build completed successfully"
       
     - name: Test embedded swagger documentation
       run: |
