@@ -19,18 +19,31 @@ jobs:
       with:
         go-version: '1.23'
         
-    - name: Cache Go modules
-      uses: actions/cache@v4
-      with:
-        path: |
-          ~/.cache/go-build
-          ~/go/pkg/mod
-        key: ${{ runner.os }}-go-${{ hashFiles('**/go.sum') }}
-        restore-keys: |
-          ${{ runner.os }}-go-
-          
-    - name: Download dependencies
+    - name: Debug Go environment
       run: |
+        echo "Go version: $(go version)"
+        echo "Go env:"
+        go env
+        echo "Current directory: $(pwd)"
+        echo "Directory contents:"
+        ls -la
+        
+    # Cache disabled due to gtar errors
+    # - name: Cache Go modules
+    #   uses: actions/cache@v4
+    #   with:
+    #     path: |
+    #       ~/.cache/go-build
+    #       ~/go/pkg/mod
+    #     key: ${{ runner.os }}-go-${{ hashFiles('**/go.sum') }}
+    #     restore-keys: |
+    #       ${{ runner.os }}-go-
+          
+    - name: Clear environment and download dependencies
+      run: |
+        echo "Clearing Go cache..."
+        go clean -cache -modcache -testcache
+        echo "Downloading dependencies..."
         go mod download
         go mod verify
       
@@ -41,8 +54,11 @@ jobs:
       run: |
         echo "Cleaning docs directory..."
         rm -rf docs/
+        mkdir -p docs/
         echo "Generating swagger documentation..."
         swag init
+        echo "Checking generated files..."
+        ls -la docs/
       
     - name: Verify Swagger files
       run: |
