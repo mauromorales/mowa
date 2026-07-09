@@ -11,7 +11,13 @@ import (
 	"github.com/labstack/echo/v4"
 )
 
-// handleGetUptime handles the GET /api/uptime endpoint
+// @Summary Get system uptime
+// @Description Get the current system uptime information
+// @Tags system
+// @Produce json
+// @Success 200 {object} UptimeResponse "Uptime information retrieved successfully"
+// @Failure 500 {object} map[string]interface{} "Internal server error"
+// @Router /api/uptime [get]
 func handleGetUptime(c echo.Context) error {
 	uptime, err := getUptime()
 	if err != nil {
@@ -62,7 +68,7 @@ func getShellUptime() (float64, error) {
 // parseUptimeOutput parses the uptime command output
 func parseUptimeOutput(output string) (float64, error) {
 	// Example output: " 12:34:56 up 2 days, 3:45, 2 users, load average: 1.23, 1.45, 1.67"
-	
+
 	// Look for "up" followed by time information
 	upIndex := strings.Index(output, "up")
 	if upIndex == -1 {
@@ -71,7 +77,7 @@ func parseUptimeOutput(output string) (float64, error) {
 
 	// Extract the part after "up"
 	afterUp := output[upIndex+2:]
-	
+
 	// Split by comma to get the uptime part
 	parts := strings.Split(afterUp, ",")
 	if len(parts) == 0 {
@@ -116,7 +122,7 @@ func formatUptimeResponse(uptimeSeconds float64) UptimeResponse {
 	minutes := (int(uptimeSeconds) % (60 * 60)) / 60
 
 	var formatted []string
-	
+
 	if days > 0 {
 		dayText := fmt.Sprintf("%d day", days)
 		if days != 1 {
@@ -124,7 +130,7 @@ func formatUptimeResponse(uptimeSeconds float64) UptimeResponse {
 		}
 		formatted = append(formatted, dayText)
 	}
-	
+
 	if hours > 0 {
 		hourText := fmt.Sprintf("%d hour", hours)
 		if hours != 1 {
@@ -132,7 +138,7 @@ func formatUptimeResponse(uptimeSeconds float64) UptimeResponse {
 		}
 		formatted = append(formatted, hourText)
 	}
-	
+
 	if minutes > 0 {
 		minuteText := fmt.Sprintf("%d minute", minutes)
 		if minutes != 1 {
@@ -148,4 +154,4 @@ func formatUptimeResponse(uptimeSeconds float64) UptimeResponse {
 		UptimeSeconds: uptimeSeconds,
 		Formatted:     formattedString,
 	}
-} 
+}
