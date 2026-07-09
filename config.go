@@ -16,7 +16,8 @@ func loadConfig(configPath string) (*Config, error) {
 	if configPath == "" {
 		return &Config{
 			Messages: MessagesConfig{
-				Groups: make(map[string][]string),
+				Groups:         make(map[string][]string),
+				TimeoutSeconds: defaultSendTimeoutSeconds,
 			},
 			Storage: StorageConfig{
 				Dir: "./storage", // Default storage directory
@@ -44,6 +45,11 @@ func loadConfig(configPath string) (*Config, error) {
 	// Set default storage directory if not specified
 	if config.Storage.Dir == "" {
 		config.Storage.Dir = "./storage"
+	}
+
+	// Set default send timeout if not specified or invalid
+	if config.Messages.TimeoutSeconds <= 0 {
+		config.Messages.TimeoutSeconds = defaultSendTimeoutSeconds
 	}
 
 	log.Printf("Configuration loaded from %s with %d message groups and storage dir: %s", configPath, len(config.Messages.Groups), config.Storage.Dir)

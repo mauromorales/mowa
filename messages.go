@@ -1,15 +1,24 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"log"
 	"net/http"
 	"os/exec"
 	"regexp"
 	"strings"
+	"time"
 
 	"github.com/labstack/echo/v4"
 )
+
+// defaultSendTimeoutSeconds bounds a single osascript send. It is intentionally
+// well under the ~120s default AppleEvent timeout so a wedged Messages bridge
+// fails fast instead of hanging the HTTP request. Kept below the doorbell
+// client's 10s read timeout (7 + 2s grace = 9s) so mowa fails before the client
+// gives up.
+const defaultSendTimeoutSeconds = 7
 
 // @Summary Send messages to recipients
 // @Description Send messages to one or more recipients via iMessage
@@ -90,24 +99,49 @@ func sendMessage(recipient, message string) error {
 	// Escape the message content for AppleScript
 	escapedMessage := strings.ReplaceAll(message, "\"", "\\\"")
 
-	// Create AppleScript to send message via Messages app
+	timeout := sendTimeout()
+
+	// Create AppleScript to send message via Messages app. The `with timeout`
+	// block makes the AppleEvent surface a clean error faster than its ~120s
+	// default; executeAppleScript enforces a hard deadline as a backstop.
 	script := fmt.Sprintf(`
-tell application "Messages"
-    set targetService to 1st service whose service type = iMessage
-    set myBuddy to buddy "%s" of targetService
-    send "%s" to myBuddy
-end tell
-`, recipient, escapedMessage)
+with timeout of %d seconds
+    tell application "Messages"
+        set targetService to 1st service whose service type = iMessage
+        set myBuddy to buddy "%s" of targetService
+        send "%s" to myBuddy
+    end tell
+end timeout
+`, int(timeout.Seconds()), recipient, escapedMessage)
 
 	// Execute the AppleScript
-	return executeAppleScript(script)
+	return executeAppleScript(script, timeout)
 }
 
-// executeAppleScript executes an AppleScript and returns any error
-func executeAppleScript(script string) error {
-	cmd := exec.Command("osascript", "-e", script)
+// sendTimeout returns the configured osascript send timeout, falling back to
+// the default when no config has been loaded or the value is invalid.
+func sendTimeout() time.Duration {
+	if appConfig != nil && appConfig.Messages.TimeoutSeconds > 0 {
+		return time.Duration(appConfig.Messages.TimeoutSeconds) * time.Second
+	}
+	return defaultSendTimeoutSeconds * time.Second
+}
+
+// executeAppleScript executes an AppleScript with a bounded deadline and returns
+// any error. The process is killed on timeout so no orphaned osascript lingers.
+func executeAppleScript(script string, timeout time.Duration) error {
+	// Give the process a small grace period beyond the AppleScript's own
+	// `with timeout` so its cleaner error can surface before the hard kill.
+	ctx, cancel := context.WithTimeout(context.Background(), timeout+2*time.Second)
+	defer cancel()
+
+	cmd := exec.CommandContext(ctx, "osascript", "-e", script)
 
 	output, err := cmd.CombinedOutput()
+	if ctx.Err() == context.DeadlineExceeded {
+		log.Printf("AppleScript timed out after %s; killed osascript", timeout)
+		return fmt.Errorf("osascript timed out after %s", timeout)
+	}
 	if err != nil {
 		log.Printf("AppleScript failed with error: %v", err)
 		log.Printf("AppleScript output: %s", string(output))
