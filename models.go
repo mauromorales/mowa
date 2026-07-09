@@ -9,6 +9,9 @@ type Config struct {
 // MessagesConfig represents the messages configuration
 type MessagesConfig struct {
 	Groups map[string][]string `yaml:"groups"`
+	// TimeoutSeconds bounds how long a single osascript send may run before
+	// it is killed and reported as a failure. Defaults to defaultSendTimeoutSeconds.
+	TimeoutSeconds int `yaml:"timeout_seconds"`
 }
 
 // StorageConfig represents the storage configuration

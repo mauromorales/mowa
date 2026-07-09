@@ -2,6 +2,11 @@
 # Copy this file to config.yaml and modify as needed
 
 messages:
+  # Max seconds a single osascript send may run before it is killed and
+  # reported as a failure. Defaults to 7 if unset. Keep it well under the
+  # ~120s default AppleEvent timeout so a wedged Messages bridge fails fast,
+  # and below any synchronous client's read timeout (the doorbell uses 10s).
+  timeout_seconds: 7
   groups:
     developers:
       - "dev1@example.com"
