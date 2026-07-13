@@ -18,6 +18,17 @@ import (
 //go:embed assets/mowa-logo.png
 var logoFile embed.FS
 
+// Build metadata, injected at release time by goreleaser via
+// -ldflags "-X main.version=... -X main.commit=... -X main.date=...".
+// Local/dev builds keep the defaults; version == "dev" disables the
+// "already up to date" short-circuit in the self-update endpoint so a
+// local build always reinstalls.
+var (
+	version = "dev"
+	commit  = "none"
+	date    = "unknown"
+)
+
 // @title Mowa API
 // @version 1.0
 // @description A simple API for sending messages and managing file storage
@@ -233,6 +244,9 @@ func main() {
 
 		// Storage endpoint with path in URL (GET only)
 		api.GET("/storage/*", handleStorageWithPath)
+
+		// Self-update endpoint
+		api.POST("/update", handleUpdate)
 	}
 
 	// Start server

@@ -88,6 +88,32 @@ type StorageResponse struct {
 	Error string `json:"error,omitempty"`
 }
 
+// UpdateRequest represents the request to self-update the running binary
+// @Description Request to update mowa to a specific release, or the latest release when omitted
+type UpdateRequest struct {
+	// @Description Release version to install, with or without a leading "v" (e.g. "0.4.2" or "v0.4.2"). Omit to install the latest release.
+	// @Example "0.4.2"
+	Version string `json:"version,omitempty"`
+}
+
+// UpdateResponse represents the response from a self-update operation
+// @Description Response from a self-update operation
+type UpdateResponse struct {
+	// @Description Whether the update was applied (false for errors and "already up to date")
+	Success bool `json:"success"`
+	// @Description The version that was running before the update
+	// @Example "0.4.1"
+	PreviousVersion string `json:"previousVersion,omitempty"`
+	// @Description The version that is now installed on disk
+	// @Example "0.4.2"
+	InstalledVersion string `json:"installedVersion,omitempty"`
+	// @Description Human-readable description of the result
+	// @Example "Update installed; the service is restarting."
+	Message string `json:"message"`
+	// @Description Error message if the update failed
+	Error string `json:"error,omitempty"`
+}
+
 // MowaError represents custom errors
 // @Description Custom error response
 type MowaError struct {
