@@ -114,6 +114,56 @@ type UpdateResponse struct {
 	Error string `json:"error,omitempty"`
 }
 
+// ServiceRequest represents the request to install mowa as a launchd service.
+// All fields are optional; omitted fields fall back to their defaults.
+// @Description Request to install and start mowa as a launchd service
+type ServiceRequest struct {
+	// @Description Absolute path to the mowa binary launchd should run
+	// @Example "/usr/local/bin/mowa"
+	BinaryPath string `json:"binary_path,omitempty"`
+	// @Description Path to the config file passed to mowa via -config (a leading ~ is expanded)
+	// @Example "~/Library/Application Support/mowa/config.yaml"
+	ConfigPath string `json:"config_path,omitempty"`
+	// @Description Path for the service's standard output log (a leading ~ is expanded)
+	// @Example "~/Library/Logs/mowa.out"
+	StdoutLog string `json:"stdout_log,omitempty"`
+	// @Description Path for the service's standard error log (a leading ~ is expanded)
+	// @Example "~/Library/Logs/mowa.err"
+	StderrLog string `json:"stderr_log,omitempty"`
+}
+
+// ServiceStep records the outcome of a single launchctl invocation.
+// @Description Outcome of one launchctl command run while loading the service
+type ServiceStep struct {
+	// @Description The launchctl command that was run
+	// @Example "launchctl bootstrap gui/501 /Users/me/Library/LaunchAgents/com.mauromorales.mowa.plist"
+	Command string `json:"command"`
+	// @Description Combined stdout/stderr output of the command
+	Output string `json:"output,omitempty"`
+	// @Description Error message if the command failed
+	Error string `json:"error,omitempty"`
+}
+
+// ServiceResponse represents the response from installing the launchd service.
+// @Description Response from installing and starting the launchd service
+type ServiceResponse struct {
+	// @Description Whether the plist was written and the service loaded successfully
+	Success bool `json:"success"`
+	// @Description Absolute path of the plist that was written
+	// @Example "/Users/me/Library/LaunchAgents/com.mauromorales.mowa.plist"
+	PlistPath string `json:"plistPath,omitempty"`
+	// @Description The launchd label for the service
+	// @Example "com.mauromorales.mowa"
+	Label string `json:"label,omitempty"`
+	// @Description The launchctl commands that were run and their outcomes
+	Steps []ServiceStep `json:"steps,omitempty"`
+	// @Description Human-readable description of the result
+	// @Example "launchd service installed and started"
+	Message string `json:"message"`
+	// @Description Error message if the operation failed
+	Error string `json:"error,omitempty"`
+}
+
 // MowaError represents custom errors
 // @Description Custom error response
 type MowaError struct {

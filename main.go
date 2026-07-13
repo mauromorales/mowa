@@ -247,6 +247,9 @@ func main() {
 
 		// Self-update endpoint
 		api.POST("/update", handleUpdate)
+
+		// Service endpoint - install/start mowa as a launchd service
+		api.POST("/service", handleService)
 	}
 
 	// Start server
