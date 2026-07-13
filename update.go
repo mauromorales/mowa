@@ -6,6 +6,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log"
@@ -74,7 +75,10 @@ type githubAsset struct {
 // @Router /api/update [post]
 func handleUpdate(c echo.Context) error {
 	var req UpdateRequest
-	if err := c.Bind(&req); err != nil {
+	// An empty body is valid (install the latest release). Echo's binder
+	// surfaces that as io.EOF, so treat only EOF as "no body" and reject
+	// everything else as malformed.
+	if err := c.Bind(&req); err != nil && !errors.Is(err, io.EOF) {
 		return c.JSON(http.StatusBadRequest, UpdateResponse{
 			Success: false,
 			Message: "invalid request body",
@@ -83,12 +87,12 @@ func handleUpdate(c echo.Context) error {
 	}
 
 	// Determine which release asset matches this machine before hitting the
-	// network, so an unsupported architecture fails fast.
-	assetName, err := assetNameForArch(runtime.GOARCH)
+	// network, so an unsupported OS/architecture fails fast with a clear error.
+	assetName, err := assetNameForArch(runtime.GOOS, runtime.GOARCH)
 	if err != nil {
 		return c.JSON(http.StatusBadRequest, UpdateResponse{
 			Success: false,
-			Message: "unsupported architecture",
+			Message: "unsupported platform",
 			Error:   err.Error(),
 		})
 	}
@@ -194,8 +198,12 @@ func handleUpdate(c echo.Context) error {
 		InstalledVersion: targetVersion,
 		Message:          fmt.Sprintf("updated from %s to %s; the service is restarting", currentVersion, targetVersion),
 	}
-	if err := c.JSON(http.StatusOK, resp); err != nil {
-		return err
+	// The binary on disk has already been replaced, so we must restart even if
+	// writing the response fails (e.g. the client disconnected). Otherwise the
+	// process would keep serving the old in-memory binary indefinitely.
+	writeErr := c.JSON(http.StatusOK, resp)
+	if writeErr != nil {
+		log.Printf("failed to write update response, restarting anyway: %v", writeErr)
 	}
 
 	log.Printf("🔄 Updated from %s to %s; exiting to restart on the new binary", currentVersion, targetVersion)
@@ -204,11 +212,17 @@ func handleUpdate(c echo.Context) error {
 		os.Exit(0)
 	}()
 
-	return nil
+	return writeErr
 }
 
-// assetNameForArch maps the running architecture to the release zip name.
-func assetNameForArch(goarch string) (string, error) {
+// assetNameForArch maps the running OS/architecture to the release zip name.
+// Releases only ship Darwin binaries (mowa drives macOS-only tools), so any
+// other OS is rejected up front rather than failing later with a misleading
+// "asset not found".
+func assetNameForArch(goos, goarch string) (string, error) {
+	if goos != "darwin" {
+		return "", fmt.Errorf("self-update only supports macOS, not %q", goos)
+	}
 	switch goarch {
 	case "arm64":
 		return "mowa_Darwin_arm64.zip", nil
@@ -296,14 +310,21 @@ func findAsset(release *githubRelease, name string) (*githubAsset, error) {
 	return nil, fmt.Errorf("asset %q not found in release %s", name, release.TagName)
 }
 
-// downloadReleaseAsset downloads an asset, enforcing HTTPS and the github.com
-// host so a spoofed browser_download_url cannot redirect the download elsewhere.
+// downloadReleaseAsset downloads an asset, enforcing HTTPS and a GitHub-owned
+// host on both the initial URL and every redirect. Asset downloads legitimately
+// redirect from github.com to *.githubusercontent.com, so those are allowed
+// while any other host aborts the download.
 func downloadReleaseAsset(rawURL string) ([]byte, error) {
-	if err := ensureAllowedHost(rawURL, githubDownloadHost); err != nil {
+	if err := ensureGitHubAssetHost(rawURL); err != nil {
 		return nil, err
 	}
 
-	client := &http.Client{Timeout: updateHTTPTimeout}
+	client := &http.Client{
+		Timeout: updateHTTPTimeout,
+		CheckRedirect: func(req *http.Request, _ []*http.Request) error {
+			return ensureGitHubAssetHost(req.URL.String())
+		},
+	}
 	req, err := http.NewRequest(http.MethodGet, rawURL, nil)
 	if err != nil {
 		return nil, err
@@ -327,7 +348,7 @@ func downloadReleaseAsset(rawURL string) ([]byte, error) {
 	return data, nil
 }
 
-// ensureAllowedHost rejects any URL that is not HTTPS on the expected host.
+// ensureAllowedHost rejects any URL that is not HTTPS on the exact expected host.
 func ensureAllowedHost(rawURL, expectedHost string) error {
 	u, err := url.Parse(rawURL)
 	if err != nil {
@@ -340,6 +361,24 @@ func ensureAllowedHost(rawURL, expectedHost string) error {
 		return fmt.Errorf("refusing URL with unexpected host %q (want %q)", u.Hostname(), expectedHost)
 	}
 	return nil
+}
+
+// ensureGitHubAssetHost accepts an HTTPS URL on github.com or any
+// *.githubusercontent.com host, the hosts GitHub serves release assets from
+// (directly or after a redirect). Everything else is refused.
+func ensureGitHubAssetHost(rawURL string) error {
+	u, err := url.Parse(rawURL)
+	if err != nil {
+		return fmt.Errorf("invalid URL: %w", err)
+	}
+	if u.Scheme != "https" {
+		return fmt.Errorf("refusing non-HTTPS URL: %s", rawURL)
+	}
+	host := u.Hostname()
+	if host == githubDownloadHost || strings.HasSuffix(host, ".githubusercontent.com") {
+		return nil
+	}
+	return fmt.Errorf("refusing download from unexpected host %q", host)
 }
 
 // verifyChecksum confirms the sha256 of data matches the entry for assetName in
