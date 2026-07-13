@@ -9,6 +9,7 @@ A Go-native web API server that allows you to interact with MacOS and iCloud fea
 - **Send Messages**: Send iMessages via the Messages app using AppleScript
 - **System Uptime**: Get system uptime using shell commands
 - **File Storage**: Save and retrieve YAML files with configurable storage directory
+- **Login Service**: `mowa install` sets mowa up as a launchd agent that starts at login and stays alive
 - **Modular Architecture**: Easy to extend with new endpoints for volume control, app launching, etc.
 - **Go Native**: Single binary deployment, no external runtimes required
 - **High Performance**: Compiled Go with Echo web framework
@@ -70,6 +71,9 @@ go build -o mowa
 ./mowa -config config.yaml
 ```
 
+See [Installing as a Service](#installing-as-a-service) below to have mowa start
+automatically at login.
+
 ### 2. Test the API
 
 The server will start on `http://localhost:8080` by default. You can test it with:
@@ -127,67 +131,42 @@ curl -X GET http://localhost:8080/api/storage/config/database.yaml
 
 ## Installing as a Service
 
-To run mowa as a background service that starts automatically on system boot, you can create a LaunchDaemon plist file.
+Run `mowa install` to set mowa up as a launchd user agent that starts at login
+and stays alive (`KeepAlive`):
 
-1. **Create the plist file**:
-   ```bash
-   # Create the LaunchAgents directory if it doesn't exist
-   mkdir -p ~/Library/LaunchAgents
-   
-   # Create the plist file
-   cat > ~/Library/LaunchAgents/com.mauromorales.mowa.plist << 'EOF'
-   <?xml version="1.0" encoding="UTF-8"?>
-   <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-   <plist version="1.0">
-   <dict>
-       <key>Label</key>
-       <string>com.mauromorales.mowa</string>
-       <key>ProgramArguments</key>
-       <array>
-           <string>/path/to/your/mowa</string>
-           <string>-config</string>
-           <string>/path/to/your/config.yaml</string>
-       </array>
-       <key>RunAtLoad</key>
-       <true/>
-       <key>KeepAlive</key>
-       <true/>
-       <key>StandardOutPath</key>
-       <string>/Library/Logs/mowa.log</string>
-       <key>StandardErrorPath</key>
-       <string>/Library/Logs/mowa_error.log</string>
-       <key>WorkingDirectory</key>
-       <string>/path/to/your/mowa/directory</string>
-   </dict>
-   </plist>
-   EOF
-   ```
+```bash
+mowa install
+```
 
-2. **Update the paths** in the plist file:
-   - Replace `/path/to/your/mowa` with the actual path to your mowa binary
-   - Replace `/path/to/your/config.yaml` with the actual path to your config file
-   - Replace `/path/to/your/mowa/directory` with the directory containing your mowa binary
+This writes `~/Library/LaunchAgents/com.mauromorales.mowa.plist`, then loads and
+starts the service. By default it points the service at the binary you ran
+`install` from, uses `~/Library/Application Support/mowa/config.yaml` for
+configuration (the file is optional — mowa uses built-in defaults when it is
+absent), and logs to `~/Library/Logs/mowa.out` / `mowa.err`. Re-running
+`mowa install` reinstalls the service, so it is safe to run again after
+upgrading.
 
-3. **Load the service**:
-   ```bash
-   launchctl load ~/Library/LaunchAgents/com.mowa.plist
-   
-   # Check if it's running
-   launchctl list | grep mowa
-   ```
+Override any of the paths with flags:
 
-4. **Manage the service**:
-   ```bash
-   # Stop the service
-   launchctl stop com.mowa
-   
-   # Unload the service
-   launchctl unload ~/Library/LaunchAgents/com.mowa.plist
-   
-   # View logs
-   tail -f /Library/Logs/mowa.log
-   tail -f /Library/Logs/mowa_error.log
-   ```
+```bash
+mowa install \
+  --binary /usr/local/bin/mowa \
+  --config ~/Library/Application\ Support/mowa/config.yaml \
+  --stdout ~/Library/Logs/mowa.out \
+  --stderr ~/Library/Logs/mowa.err
+```
+
+Inspect, restart, or remove the service with `launchctl`:
+
+```bash
+launchctl print gui/$(id -u)/com.mauromorales.mowa    # inspect
+launchctl kickstart -k gui/$(id -u)/com.mauromorales.mowa  # restart
+launchctl bootout gui/$(id -u)/com.mauromorales.mowa  # stop and unload
+tail -f ~/Library/Logs/mowa.out                       # view logs
+```
+
+Running mowa under launchd is also what lets the `POST /api/update` self-update
+endpoint relaunch the process on the new binary.
 
 ## API Documentation
 
