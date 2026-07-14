@@ -8,15 +8,18 @@ import (
 )
 
 func TestExpandHome(t *testing.T) {
-	home := "/Users/test"
+	// Build home and expectations with filepath so the test is OS-agnostic:
+	// expandHome joins with filepath.Join, so a hardcoded "/"-joined expectation
+	// would fail on non-Unix builders.
+	home := filepath.FromSlash("/Users/test")
 	cases := []struct {
 		in   string
 		want string
 	}{
 		{"~", home},
-		{"~/Library/Logs/mowa.out", home + "/Library/Logs/mowa.out"},
-		{"/usr/local/bin/mowa", "/usr/local/bin/mowa"},
-		{"~notatilde/foo", "~notatilde/foo"}, // only a leading "~" or "~/" expands
+		{"~/Library/Logs/mowa.out", filepath.Join(home, "Library", "Logs", "mowa.out")},
+		{"/usr/local/bin/mowa", "/usr/local/bin/mowa"}, // no leading "~", returned verbatim
+		{"~notatilde/foo", "~notatilde/foo"},           // only a leading "~" or "~/" expands
 		{"relative/path", "relative/path"},
 	}
 	for _, tc := range cases {
@@ -27,15 +30,15 @@ func TestExpandHome(t *testing.T) {
 }
 
 func TestResolveServicePath(t *testing.T) {
-	home := "/Users/test"
+	home := filepath.FromSlash("/Users/test")
 
 	// Empty value falls back to the default (with the default's ~ expanded).
-	if got := resolveServicePath("  ", "~/Library/Logs/mowa.out", home); got != home+"/Library/Logs/mowa.out" {
+	if got := resolveServicePath("  ", "~/Library/Logs/mowa.out", home); got != filepath.Join(home, "Library", "Logs", "mowa.out") {
 		t.Errorf("empty value did not fall back to expanded default: %q", got)
 	}
 
 	// A provided value overrides the default and has its ~ expanded.
-	if got := resolveServicePath("~/custom.yaml", "/unused", home); got != home+"/custom.yaml" {
+	if got := resolveServicePath("~/custom.yaml", "/unused", home); got != filepath.Join(home, "custom.yaml") {
 		t.Errorf("provided value not expanded: %q", got)
 	}
 
@@ -64,6 +67,60 @@ func TestRenderLaunchdPlist(t *testing.T) {
 		if !strings.Contains(plist, want) {
 			t.Errorf("plist missing %q\n%s", want, plist)
 		}
+	}
+}
+
+func TestWriteFileAtomic(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "com.example.test.plist")
+
+	if err := writeFileAtomic(path, []byte("hello"), 0o600); err != nil {
+		t.Fatalf("writeFileAtomic: %v", err)
+	}
+
+	got, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read back: %v", err)
+	}
+	if string(got) != "hello" {
+		t.Errorf("content = %q, want %q", got, "hello")
+	}
+
+	info, err := os.Stat(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if perm := info.Mode().Perm(); perm != 0o600 {
+		t.Errorf("perm = %o, want 600", perm)
+	}
+
+	// Overwriting an existing file works and leaves no stray temp files behind.
+	if err := writeFileAtomic(path, []byte("world"), 0o600); err != nil {
+		t.Fatalf("overwrite: %v", err)
+	}
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(entries) != 1 {
+		var names []string
+		for _, e := range entries {
+			names = append(names, e.Name())
+		}
+		t.Errorf("expected only the plist to remain, found: %v", names)
+	}
+}
+
+func TestInstallFlagParsing(t *testing.T) {
+	// `-h` is a clean exit (ContinueOnError + flag.ErrHelp), not an install
+	// failure, and it must return before any launchctl/filesystem work.
+	if err := runInstall([]string{"-h"}); err != nil {
+		t.Errorf("runInstall(-h) = %v, want nil", err)
+	}
+
+	// An unknown flag surfaces as a returned error rather than os.Exit.
+	if err := runInstall([]string{"--definitely-not-a-flag"}); err == nil {
+		t.Error("runInstall(--definitely-not-a-flag) = nil, want an error")
 	}
 }
 

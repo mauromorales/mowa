@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"flag"
 	"fmt"
 	"html"
@@ -42,7 +43,7 @@ var pidLineRegexp = regexp.MustCompile(`(?m)^\s*pid = (\d+)`)
 // separate from the long-running server, reloading a running server is safe —
 // launchd relaunches it from the new plist.
 func runInstall(args []string) error {
-	fs := flag.NewFlagSet("install", flag.ExitOnError)
+	fs := flag.NewFlagSet("install", flag.ContinueOnError)
 	binaryFlag := fs.String("binary", "", "Path to the mowa binary launchd should run (default: the running executable)")
 	configFlag := fs.String("config", "", "Path to the config file passed via -config (default: ~/Library/Application Support/mowa/config.yaml)")
 	stdoutFlag := fs.String("stdout", "", "Path for the service's stdout log (default: ~/Library/Logs/mowa.out)")
@@ -52,6 +53,11 @@ func runInstall(args []string) error {
 		fs.PrintDefaults()
 	}
 	if err := fs.Parse(args); err != nil {
+		// `mowa install -h` is a clean exit, not an install failure; the flag
+		// package has already printed the usage text.
+		if errors.Is(err, flag.ErrHelp) {
+			return nil
+		}
 		return err
 	}
 
@@ -103,7 +109,7 @@ func runInstall(args []string) error {
 	}
 
 	plistPath := filepath.Join(launchAgentsDir, launchdLabel+".plist")
-	if err := os.WriteFile(plistPath, []byte(renderLaunchdPlist(binaryPath, configPath, stdoutLog, stderrLog)), 0600); err != nil {
+	if err := writeFileAtomic(plistPath, []byte(renderLaunchdPlist(binaryPath, configPath, stdoutLog, stderrLog)), 0600); err != nil {
 		return fmt.Errorf("failed to write launchd plist %s: %w", plistPath, err)
 	}
 	fmt.Printf("Wrote launchd plist to %s\n", plistPath)
@@ -216,6 +222,33 @@ func renderLaunchdPlist(binaryPath, configPath, stdoutLog, stderrLog string) str
 		html.EscapeString(stdoutLog),
 		html.EscapeString(stderrLog),
 	)
+}
+
+// writeFileAtomic writes data to a temp file in the destination directory and
+// renames it into place, so an interruption (crash, full disk) can never leave
+// a partially-written plist that would make a later `launchctl bootstrap`
+// failure harder to diagnose. The temp file is removed on any error before the
+// rename.
+func writeFileAtomic(path string, data []byte, perm os.FileMode) error {
+	tmp, err := os.CreateTemp(filepath.Dir(path), filepath.Base(path)+".tmp-*")
+	if err != nil {
+		return err
+	}
+	tmpName := tmp.Name()
+	// Best-effort cleanup if we bail out before the rename succeeds.
+	defer os.Remove(tmpName)
+
+	if _, err := tmp.Write(data); err != nil {
+		tmp.Close()
+		return err
+	}
+	if err := tmp.Close(); err != nil {
+		return err
+	}
+	if err := os.Chmod(tmpName, perm); err != nil {
+		return err
+	}
+	return os.Rename(tmpName, path)
 }
 
 // ensureExecutable verifies that path points to an existing, non-directory file
