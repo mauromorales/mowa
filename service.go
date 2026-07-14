@@ -48,6 +48,7 @@ func runInstall(args []string) error {
 	configFlag := fs.String("config", "", "Path to the config file passed via -config (default: ~/Library/Application Support/mowa/config.yaml)")
 	stdoutFlag := fs.String("stdout", "", "Path for the service's stdout log (default: ~/Library/Logs/mowa.out)")
 	stderrFlag := fs.String("stderr", "", "Path for the service's stderr log (default: ~/Library/Logs/mowa.err)")
+	portFlag := fs.String("port", "", "Port for the service via MOWA_PORT (default: the MOWA_PORT env var at install time, else mowa's built-in 8080)")
 	fs.Usage = func() {
 		fmt.Fprintf(fs.Output(), "Usage: mowa install [flags]\n\nInstalls mowa as a launchd login service. All flags are optional.\nA leading \"~\" in any path is expanded to your home directory.\n\n")
 		fs.PrintDefaults()
@@ -66,6 +67,20 @@ func runInstall(args []string) error {
 	// leaves nothing behind.
 	if _, err := exec.LookPath("launchctl"); err != nil {
 		return fmt.Errorf("launchctl not found on PATH; `mowa install` requires macOS launchd: %w", err)
+	}
+
+	// Resolve the port the service should listen on. An explicit --port wins;
+	// otherwise capture MOWA_PORT from the current environment at install time so
+	// the service matches how the user runs mowa interactively. When neither is
+	// set, the plist omits MOWA_PORT and mowa uses its built-in default (8080).
+	port := strings.TrimSpace(*portFlag)
+	if port == "" {
+		port = strings.TrimSpace(os.Getenv("MOWA_PORT"))
+	}
+	if port != "" {
+		if n, err := strconv.Atoi(port); err != nil || n < 1 || n > 65535 {
+			return fmt.Errorf("invalid port %q: must be a number between 1 and 65535", port)
+		}
 	}
 
 	home, err := os.UserHomeDir()
@@ -109,7 +124,7 @@ func runInstall(args []string) error {
 	}
 
 	plistPath := filepath.Join(launchAgentsDir, launchdLabel+".plist")
-	if err := writeFileAtomic(plistPath, []byte(renderLaunchdPlist(binaryPath, configPath, stdoutLog, stderrLog)), 0600); err != nil {
+	if err := writeFileAtomic(plistPath, []byte(renderLaunchdPlist(binaryPath, configPath, stdoutLog, stderrLog, port)), 0600); err != nil {
 		return fmt.Errorf("failed to write launchd plist %s: %w", plistPath, err)
 	}
 	fmt.Printf("Wrote launchd plist to %s\n", plistPath)
@@ -141,6 +156,11 @@ func runInstall(args []string) error {
 	fmt.Printf("✅ Installed and started %s\n", launchdLabel)
 	fmt.Printf("   binary: %s\n", binaryPath)
 	fmt.Printf("   config: %s\n", configPath)
+	if port != "" {
+		fmt.Printf("   port:   %s (MOWA_PORT)\n", port)
+	} else {
+		fmt.Println("   port:   8080 (default; pass --port or set MOWA_PORT to change)")
+	}
 	fmt.Println("   The service will start automatically at login and stay alive (KeepAlive).")
 	fmt.Printf("   Check it with: launchctl print %s\n", serviceTarget)
 	return nil
@@ -188,8 +208,23 @@ func expandHome(path, home string) string {
 // writable location). Without it, launchd runs the service from "/", so
 // relative config defaults such as Storage.Dir "./storage" would resolve to
 // "/storage" (unwritable) whenever mowa starts with no config file.
-func renderLaunchdPlist(binaryPath, configPath, stdoutLog, stderrLog string) string {
+//
+// When port is non-empty it is exported as MOWA_PORT via EnvironmentVariables so
+// the installed service listens on the same port the user runs mowa with;
+// otherwise the key is omitted and mowa uses its built-in default.
+func renderLaunchdPlist(binaryPath, configPath, stdoutLog, stderrLog, port string) string {
 	workingDir := filepath.Dir(configPath)
+
+	envSection := ""
+	if port != "" {
+		envSection = fmt.Sprintf(`    <key>EnvironmentVariables</key>
+    <dict>
+        <key>MOWA_PORT</key>
+        <string>%s</string>
+    </dict>
+`, html.EscapeString(port))
+	}
+
 	return fmt.Sprintf(`<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
@@ -204,7 +239,7 @@ func renderLaunchdPlist(binaryPath, configPath, stdoutLog, stderrLog string) str
     </array>
     <key>WorkingDirectory</key>
     <string>%s</string>
-    <key>RunAtLoad</key>
+%s    <key>RunAtLoad</key>
     <true/>
     <key>KeepAlive</key>
     <true/>
@@ -219,6 +254,7 @@ func renderLaunchdPlist(binaryPath, configPath, stdoutLog, stderrLog string) str
 		html.EscapeString(binaryPath),
 		html.EscapeString(configPath),
 		html.EscapeString(workingDir),
+		envSection,
 		html.EscapeString(stdoutLog),
 		html.EscapeString(stderrLog),
 	)
@@ -227,8 +263,10 @@ func renderLaunchdPlist(binaryPath, configPath, stdoutLog, stderrLog string) str
 // writeFileAtomic writes data to a temp file in the destination directory and
 // renames it into place, so an interruption (crash, full disk) can never leave
 // a partially-written plist that would make a later `launchctl bootstrap`
-// failure harder to diagnose. The temp file is removed on any error before the
-// rename.
+// failure harder to diagnose. The temp file's contents are fsynced before the
+// rename and the parent directory is fsynced after, so the write is durable
+// across a crash or power loss rather than only atomic. The temp file is removed
+// on any error before the rename.
 func writeFileAtomic(path string, data []byte, perm os.FileMode) error {
 	tmp, err := os.CreateTemp(filepath.Dir(path), filepath.Base(path)+".tmp-*")
 	if err != nil {
@@ -242,13 +280,40 @@ func writeFileAtomic(path string, data []byte, perm os.FileMode) error {
 		tmp.Close()
 		return err
 	}
+	// Flush contents to disk before the rename so a crash can't leave the
+	// renamed file with unwritten (empty/truncated) contents.
+	if err := tmp.Sync(); err != nil {
+		tmp.Close()
+		return err
+	}
 	if err := tmp.Close(); err != nil {
 		return err
 	}
 	if err := os.Chmod(tmpName, perm); err != nil {
 		return err
 	}
-	return os.Rename(tmpName, path)
+	if err := os.Rename(tmpName, path); err != nil {
+		return err
+	}
+	// fsync the directory so the rename itself survives a crash.
+	return syncDir(filepath.Dir(path))
+}
+
+// syncDir fsyncs a directory so a rename into it is durable. A directory that
+// cannot be opened or synced (some filesystems disallow it) is treated as a
+// non-fatal best effort.
+func syncDir(dir string) error {
+	d, err := os.Open(dir)
+	if err != nil {
+		return nil
+	}
+	defer d.Close()
+	if err := d.Sync(); err != nil {
+		// Not all filesystems support directory fsync; the rename already
+		// succeeded, so don't fail the install over durability best-effort.
+		return nil
+	}
+	return nil
 }
 
 // ensureExecutable verifies that path points to an existing, non-directory file

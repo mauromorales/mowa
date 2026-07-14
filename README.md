@@ -147,14 +147,21 @@ absent), and logs to `~/Library/Logs/mowa.out` / `mowa.err`. Re-running
 `mowa install` reinstalls the service, so it is safe to run again after
 upgrading.
 
-Override any of the paths with flags:
+The service's port follows `MOWA_PORT`: pass `--port` (or have `MOWA_PORT` set in
+your environment when you run `install`) and it is written into the plist's
+`EnvironmentVariables`. Without either, the service uses mowa's built-in default
+(8080) — note the service does **not** inherit a `MOWA_PORT` you export in your
+shell later, only what is captured at install time.
+
+Override any of the paths (and the port) with flags:
 
 ```bash
 mowa install \
   --binary /usr/local/bin/mowa \
   --config ~/Library/Application\ Support/mowa/config.yaml \
   --stdout ~/Library/Logs/mowa.out \
-  --stderr ~/Library/Logs/mowa.err
+  --stderr ~/Library/Logs/mowa.err \
+  --port 3000
 ```
 
 Inspect, restart, or remove the service with `launchctl`:

@@ -49,7 +49,12 @@ func TestResolveServicePath(t *testing.T) {
 }
 
 func TestRenderLaunchdPlist(t *testing.T) {
-	plist := renderLaunchdPlist("/usr/local/bin/mowa", "/Users/test/config.yaml", "/Users/test/out.log", "/Users/test/err.log")
+	plist := renderLaunchdPlist("/usr/local/bin/mowa", "/Users/test/config.yaml", "/Users/test/out.log", "/Users/test/err.log", "")
+
+	// With no port, the EnvironmentVariables key must be omitted entirely.
+	if strings.Contains(plist, "EnvironmentVariables") || strings.Contains(plist, "MOWA_PORT") {
+		t.Errorf("plist should not mention MOWA_PORT when no port is set:\n%s", plist)
+	}
 
 	for _, want := range []string{
 		"<key>Label</key>",
@@ -156,9 +161,30 @@ func TestEnsureExecutable(t *testing.T) {
 	}
 }
 
+func TestRenderLaunchdPlistWithPort(t *testing.T) {
+	plist := renderLaunchdPlist("/usr/local/bin/mowa", "/Users/test/config.yaml", "/Users/test/out.log", "/Users/test/err.log", "3000")
+	for _, want := range []string{
+		"<key>EnvironmentVariables</key>",
+		"<key>MOWA_PORT</key>",
+		"<string>3000</string>",
+	} {
+		if !strings.Contains(plist, want) {
+			t.Errorf("plist missing %q\n%s", want, plist)
+		}
+	}
+}
+
+func TestInstallRejectsInvalidPort(t *testing.T) {
+	for _, bad := range []string{"0", "-1", "70000", "abc", "80a"} {
+		if err := runInstall([]string{"--port", bad}); err == nil {
+			t.Errorf("runInstall(--port %q) = nil, want an error", bad)
+		}
+	}
+}
+
 func TestRenderLaunchdPlistEscapesPaths(t *testing.T) {
 	// A path with XML metacharacters must not break the document.
-	plist := renderLaunchdPlist("/opt/a&b/mowa", "/c<d>/config.yaml", "/out.log", "/err.log")
+	plist := renderLaunchdPlist("/opt/a&b/mowa", "/c<d>/config.yaml", "/out.log", "/err.log", "")
 	if strings.Contains(plist, "a&b") || strings.Contains(plist, "c<d>") {
 		t.Errorf("plist did not escape XML metacharacters:\n%s", plist)
 	}
