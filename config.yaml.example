@@ -16,4 +16,11 @@ messages:
 
 storage:
   dir: "/Users/foobar/some/path"  # Custom storage directory
-  # Default is "./storage" if not specified 
+  # Default is "./storage" if not specified
+
+reminders:
+  # Max seconds a single Reminders osascript call may run before it is killed
+  # and reported as an error. Defaults to 30 if unset. Reminders scripting can
+  # be slow on large databases, so this is higher than the messages timeout;
+  # raise it further if your Reminders database is very large.
+  timeout_seconds: 30 

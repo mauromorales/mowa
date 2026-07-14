@@ -2,8 +2,18 @@ package main
 
 // Config represents the application configuration
 type Config struct {
-	Messages MessagesConfig `yaml:"messages"`
-	Storage  StorageConfig  `yaml:"storage"`
+	Messages  MessagesConfig  `yaml:"messages"`
+	Storage   StorageConfig   `yaml:"storage"`
+	Reminders RemindersConfig `yaml:"reminders"`
+}
+
+// RemindersConfig represents the reminders configuration
+type RemindersConfig struct {
+	// TimeoutSeconds bounds how long a single Reminders osascript call may run
+	// before it is killed and reported as an error. Reminders AppleScript can be
+	// slow on large databases, so this defaults higher than the messages timeout
+	// (defaultReminderTimeoutSeconds).
+	TimeoutSeconds int `yaml:"timeout_seconds"`
 }
 
 // MessagesConfig represents the messages configuration
@@ -112,6 +122,108 @@ type UpdateResponse struct {
 	Message string `json:"message"`
 	// @Description Error message if the update failed
 	Error string `json:"error,omitempty"`
+}
+
+// ReminderList represents a list in the macOS Reminders app
+// @Description A Reminders list
+type ReminderList struct {
+	// @Description The list name
+	// @Example "Groceries"
+	Name string `json:"name"`
+	// @Description Stable identifier for the list (use this to address it unambiguously)
+	// @Example "x-apple-reminderkit://REMCDList/ABC123"
+	ID string `json:"id"`
+}
+
+// ReminderListsResponse wraps the collection of Reminders lists
+// @Description Response containing all Reminders lists
+type ReminderListsResponse struct {
+	// @Description The Reminders lists
+	Lists []ReminderList `json:"lists"`
+}
+
+// Reminder represents a single reminder in the macOS Reminders app
+// @Description A single reminder
+type Reminder struct {
+	// @Description Stable identifier for the reminder; address reminders by this id
+	// @Example "x-apple-reminder://ABC123"
+	ID string `json:"id"`
+	// @Description The reminder title
+	// @Example "Buy milk"
+	Name string `json:"name"`
+	// @Description Free-form notes attached to the reminder
+	// @Example "Whole milk, 2 liters"
+	Notes string `json:"notes"`
+	// @Description Due date in RFC3339 format, or null if none is set
+	// @Example "2026-07-20T09:00:00Z"
+	DueDate *string `json:"due_date"`
+	// @Description Whether the reminder is completed
+	Completed bool `json:"completed"`
+	// @Description Completion date in RFC3339 format, or null if not completed
+	CompletionDate *string `json:"completion_date"`
+	// @Description Name of the list that contains the reminder
+	// @Example "Groceries"
+	List string `json:"list"`
+}
+
+// RemindersResponse wraps the collection of reminders in a list
+// @Description Response containing reminders in a list
+type RemindersResponse struct {
+	// @Description The reminders
+	Reminders []Reminder `json:"reminders"`
+}
+
+// CreateListRequest is the body for creating a Reminders list
+// @Description Request to create a new Reminders list
+type CreateListRequest struct {
+	// @Description The name for the new list
+	// @Example "Groceries"
+	Name string `json:"name" binding:"required"`
+}
+
+// CreateReminderRequest is the body for creating a reminder
+// @Description Request to create a new reminder
+type CreateReminderRequest struct {
+	// @Description The target list, addressed by id or by name
+	// @Example "Groceries"
+	List string `json:"list" binding:"required"`
+	// @Description The reminder title
+	// @Example "Buy milk"
+	Name string `json:"name" binding:"required"`
+	// @Description Optional free-form notes
+	// @Example "Whole milk, 2 liters"
+	Notes string `json:"notes,omitempty"`
+	// @Description Optional due date in RFC3339 format
+	// @Example "2026-07-20T09:00:00Z"
+	DueDate string `json:"due_date,omitempty"`
+}
+
+// UpdateReminderRequest is the body for editing a reminder. Every field is
+// optional; only the fields present in the request are changed.
+// @Description Request to update fields of an existing reminder (all fields optional)
+type UpdateReminderRequest struct {
+	// @Description New title
+	// @Example "Buy oat milk"
+	Name *string `json:"name,omitempty"`
+	// @Description New notes
+	// @Example "Barista edition"
+	Notes *string `json:"notes,omitempty"`
+	// @Description New due date in RFC3339 format
+	// @Example "2026-07-21T09:00:00Z"
+	DueDate *string `json:"due_date,omitempty"`
+	// @Description Mark complete (true) or incomplete (false)
+	Completed *bool `json:"completed,omitempty"`
+	// @Description Move the reminder to another list. Not supported by the macOS
+	// Reminders scripting interface; supplying this returns 501 Not Implemented.
+	List *string `json:"list,omitempty"`
+}
+
+// ReminderErrorResponse is the error body returned by reminders endpoints
+// @Description Error response from a reminders operation
+type ReminderErrorResponse struct {
+	// @Description Human-readable error message
+	// @Example "list not found"
+	Error string `json:"error"`
 }
 
 // MowaError represents custom errors
