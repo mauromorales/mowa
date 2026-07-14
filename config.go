@@ -22,6 +22,9 @@ func defaultConfig() *Config {
 		Storage: StorageConfig{
 			Dir: "./storage", // Default storage directory
 		},
+		Reminders: RemindersConfig{
+			TimeoutSeconds: defaultReminderTimeoutSeconds,
+		},
 	}
 }
 
@@ -67,6 +70,11 @@ func loadConfig(configPath string) (*Config, error) {
 		config.Messages.TimeoutSeconds = defaultSendTimeoutSeconds
 	}
 
+	// Set default reminders timeout if not specified or invalid
+	if config.Reminders.TimeoutSeconds <= 0 {
+		config.Reminders.TimeoutSeconds = defaultReminderTimeoutSeconds
+	}
+
 	log.Printf("Configuration loaded from %s with %d message groups and storage dir: %s", configPath, len(config.Messages.Groups), config.Storage.Dir)
 	return &config, nil
 }
@@ -91,4 +99,4 @@ func expandGroups(recipients []string) []string {
 	}
 
 	return expanded
-} 
+}

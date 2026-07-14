@@ -9,6 +9,7 @@ A Go-native web API server that allows you to interact with MacOS and iCloud fea
 - **Send Messages**: Send iMessages via the Messages app using AppleScript
 - **System Uptime**: Get system uptime using shell commands
 - **File Storage**: Save and retrieve YAML files with configurable storage directory
+- **Reminders**: Manage macOS Reminders lists and reminders (create, list, edit, complete, delete)
 - **Login Service**: `mowa install` sets mowa up as a launchd agent that starts at login and stays alive
 - **Modular Architecture**: Easy to extend with new endpoints for volume control, app launching, etc.
 - **Go Native**: Single binary deployment, no external runtimes required
@@ -48,7 +49,7 @@ xattr -d com.apple.quarantine mowa
 **Important**: On first run, macOS may block mowa from running or accessing other applications. You'll need to:
 1. **Allow mowa to run**: Go to System Preferences → Security & Privacy → General, and click "Allow Anyway" for mowa
 2. **Grant accessibility permissions**: Go to System Preferences → Security & Privacy → Privacy → Accessibility, and add mowa to the list of allowed applications
-3. **Grant automation permissions**: For Messages functionality, go to System Preferences → Security & Privacy → Privacy → Automation, and ensure mowa has access to Messages
+3. **Grant automation permissions**: Go to System Preferences → Security & Privacy → Privacy → Automation, and ensure mowa has access to Messages (for messaging) and Reminders (for the reminders endpoints)
 
 ### Option 2: Build from Source
 
@@ -321,6 +322,50 @@ Save YAML files to the configured storage directory. Creates directories automat
 }
 ```
 
+### Reminders
+
+Manage the macOS Reminders app. All routes live under `/api/reminders`.
+
+> [!NOTE]
+> The first Reminders call triggers a macOS **Automation** permission prompt for controlling Reminders (System Settings → Privacy & Security → Automation). You must allow it for these endpoints to work. Reminders scripting can be slow on large databases; the per-call timeout defaults to 30s and is configurable via `reminders.timeout_seconds`.
+
+Lists are addressed by their stable `id`; reminders are always addressed by their stable `id` (names are not unique). When an id appears in the URL path it must be percent-encoded.
+
+| Method | Path | Purpose |
+|---|---|---|
+| `GET` | `/api/reminders/lists` | List all lists (`name`, `id`) |
+| `POST` | `/api/reminders/lists` | Create a list: `{"name": "..."}` |
+| `DELETE` | `/api/reminders/lists/{id}` | Delete a list and its reminders |
+| `GET` | `/api/reminders/lists/{id}/reminders` | Reminders in a list; `?completed=true` includes completed ones (default: incomplete only) |
+| `POST` | `/api/reminders` | Create: `{"list": "<id or name>", "name": "...", "notes": "...", "due_date": "RFC3339"}` (`notes`/`due_date` optional) |
+| `PATCH` | `/api/reminders/{id}` | Update any of `name`, `notes`, `due_date` (RFC3339), `completed` (bool) |
+| `DELETE` | `/api/reminders/{id}` | Delete a reminder |
+
+**Create a reminder:**
+```json
+{
+  "list": "Groceries",
+  "name": "Buy milk",
+  "notes": "Whole milk, 2 liters",
+  "due_date": "2026-07-20T09:00:00Z"
+}
+```
+
+**Response (201 Created):**
+```json
+{
+  "id": "x-apple-reminder://ABC123",
+  "name": "Buy milk",
+  "notes": "Whole milk, 2 liters",
+  "due_date": "2026-07-20T09:00:00Z",
+  "completed": false,
+  "completion_date": null,
+  "list": "Groceries"
+}
+```
+
+Moving a reminder to another list (the `list` field on `PATCH`) is **not supported** by the macOS Reminders scripting interface and returns `501 Not Implemented`.
+
 ## Development Setup
 
 ### Prerequisites
@@ -424,6 +469,10 @@ messages:
 storage:
   dir: "/Users/foobar/some/path"  # Custom storage directory (optional)
   # Default is "./storage" if not specified
+
+reminders:
+  timeout_seconds: 30  # Max seconds for a single Reminders osascript call (optional)
+  # Default is 30; raise it if Reminders is slow on a large database
 ```
 
 **Important**: Replace the phone numbers and email addresses with your actual contacts. The `config.yaml` file is automatically ignored by git (via `.gitignore`) to protect your privacy.
@@ -514,7 +563,7 @@ go build -ldflags="-s -w" -o mowa
 1. **Permission Denied**: Make sure mowa has been granted the necessary permissions in System Preferences:
    - **General**: Allow mowa to run (Security & Privacy → General)
    - **Accessibility**: Add mowa to allowed applications (Security & Privacy → Privacy → Accessibility)
-   - **Automation**: Grant mowa access to Messages (Security & Privacy → Privacy → Automation)
+   - **Automation**: Grant mowa access to Messages and Reminders (Security & Privacy → Privacy → Automation)
 2. **AppleScript Errors**: Verify that the Messages app is installed and accessible, and that mowa has automation permissions
 3. **Port Already in Use**: Change the port using MOWA_PORT environment variable
 
