@@ -55,6 +55,13 @@ func runInstall(args []string) error {
 		return err
 	}
 
+	// Fail fast if launchd tooling is absent (non-macOS host or a minimal PATH)
+	// before we write any plist or create any directories, so a failed install
+	// leaves nothing behind.
+	if _, err := exec.LookPath("launchctl"); err != nil {
+		return fmt.Errorf("launchctl not found on PATH; `mowa install` requires macOS launchd: %w", err)
+	}
+
 	home, err := os.UserHomeDir()
 	if err != nil {
 		return fmt.Errorf("could not resolve the current user's home directory: %w", err)
@@ -65,18 +72,38 @@ func runInstall(args []string) error {
 	stdoutLog := resolveServicePath(*stdoutFlag, filepath.Join(home, "Library", "Logs", "mowa.out"), home)
 	stderrLog := resolveServicePath(*stderrFlag, filepath.Join(home, "Library", "Logs", "mowa.err"), home)
 
+	// launchd expects absolute paths in ProgramArguments and for its log/config
+	// paths. A "~" has already been expanded; anchor anything still relative
+	// (e.g. a relative os.Executable() or a relative flag value) to the current
+	// working directory so the plist is unambiguous once launchd runs it.
+	for _, p := range []*string{&binaryPath, &configPath, &stdoutLog, &stderrLog} {
+		abs, err := filepath.Abs(*p)
+		if err != nil {
+			return fmt.Errorf("could not resolve %q to an absolute path: %w", *p, err)
+		}
+		*p = abs
+	}
+
+	// The binary must exist and be executable now; otherwise the install
+	// "succeeds" but launchd fails to start the service later with an opaque
+	// error.
+	if err := ensureExecutable(binaryPath); err != nil {
+		return err
+	}
+
 	// Ensure the directories launchd and the config file need exist. The config
 	// file itself is left absent on purpose: loadConfig falls back to defaults
-	// when it is missing, so we must not create or overwrite it here.
+	// when it is missing, so we must not create or overwrite it here. These live
+	// under the user's home, so create them privately (0700).
 	launchAgentsDir := filepath.Join(home, "Library", "LaunchAgents")
 	for _, dir := range []string{launchAgentsDir, filepath.Dir(configPath), filepath.Dir(stdoutLog), filepath.Dir(stderrLog)} {
-		if err := os.MkdirAll(dir, 0755); err != nil {
+		if err := os.MkdirAll(dir, 0700); err != nil {
 			return fmt.Errorf("failed to create directory %s: %w", dir, err)
 		}
 	}
 
 	plistPath := filepath.Join(launchAgentsDir, launchdLabel+".plist")
-	if err := os.WriteFile(plistPath, []byte(renderLaunchdPlist(binaryPath, configPath, stdoutLog, stderrLog)), 0644); err != nil {
+	if err := os.WriteFile(plistPath, []byte(renderLaunchdPlist(binaryPath, configPath, stdoutLog, stderrLog)), 0600); err != nil {
 		return fmt.Errorf("failed to write launchd plist %s: %w", plistPath, err)
 	}
 	fmt.Printf("Wrote launchd plist to %s\n", plistPath)
@@ -150,7 +177,13 @@ func expandHome(path, home string) string {
 
 // renderLaunchdPlist builds the launchd agent plist. Path values are XML-escaped
 // so a path containing "&" or "<" cannot corrupt the document.
+//
+// WorkingDirectory is set to the config file's directory (an app-specific,
+// writable location). Without it, launchd runs the service from "/", so
+// relative config defaults such as Storage.Dir "./storage" would resolve to
+// "/storage" (unwritable) whenever mowa starts with no config file.
 func renderLaunchdPlist(binaryPath, configPath, stdoutLog, stderrLog string) string {
+	workingDir := filepath.Dir(configPath)
 	return fmt.Sprintf(`<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
@@ -163,6 +196,8 @@ func renderLaunchdPlist(binaryPath, configPath, stdoutLog, stderrLog string) str
         <string>-config</string>
         <string>%s</string>
     </array>
+    <key>WorkingDirectory</key>
+    <string>%s</string>
     <key>RunAtLoad</key>
     <true/>
     <key>KeepAlive</key>
@@ -177,9 +212,27 @@ func renderLaunchdPlist(binaryPath, configPath, stdoutLog, stderrLog string) str
 		html.EscapeString(launchdLabel),
 		html.EscapeString(binaryPath),
 		html.EscapeString(configPath),
+		html.EscapeString(workingDir),
 		html.EscapeString(stdoutLog),
 		html.EscapeString(stderrLog),
 	)
+}
+
+// ensureExecutable verifies that path points to an existing, non-directory file
+// with at least one executable bit set, so `mowa install` rejects a bad binary
+// path up front instead of letting launchd fail to start the service later.
+func ensureExecutable(path string) error {
+	info, err := os.Stat(path)
+	if err != nil {
+		return fmt.Errorf("mowa binary %s is not accessible: %w", path, err)
+	}
+	if info.IsDir() {
+		return fmt.Errorf("mowa binary %s is a directory, not an executable", path)
+	}
+	if info.Mode().Perm()&0o111 == 0 {
+		return fmt.Errorf("mowa binary %s is not executable", path)
+	}
+	return nil
 }
 
 // servicePID reports whether the service target is loaded and, if it is running,

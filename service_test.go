@@ -1,6 +1,8 @@
 package main
 
 import (
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -52,6 +54,8 @@ func TestRenderLaunchdPlist(t *testing.T) {
 		"<string>/usr/local/bin/mowa</string>",
 		"<string>-config</string>",
 		"<string>/Users/test/config.yaml</string>",
+		"<key>WorkingDirectory</key>",
+		"<string>/Users/test</string>", // dir of the config path
 		"<key>RunAtLoad</key>",
 		"<key>KeepAlive</key>",
 		"<string>/Users/test/out.log</string>",
@@ -60,6 +64,38 @@ func TestRenderLaunchdPlist(t *testing.T) {
 		if !strings.Contains(plist, want) {
 			t.Errorf("plist missing %q\n%s", want, plist)
 		}
+	}
+}
+
+func TestEnsureExecutable(t *testing.T) {
+	dir := t.TempDir()
+
+	// A regular file with an executable bit passes.
+	exe := filepath.Join(dir, "mowa")
+	if err := os.WriteFile(exe, []byte("#!/bin/sh\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := ensureExecutable(exe); err != nil {
+		t.Errorf("expected executable file to pass, got: %v", err)
+	}
+
+	// A non-existent path fails.
+	if err := ensureExecutable(filepath.Join(dir, "does-not-exist")); err == nil {
+		t.Error("expected missing binary to fail")
+	}
+
+	// A directory fails.
+	if err := ensureExecutable(dir); err == nil {
+		t.Error("expected a directory to fail")
+	}
+
+	// A non-executable regular file fails.
+	plain := filepath.Join(dir, "config.yaml")
+	if err := os.WriteFile(plain, []byte("x"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := ensureExecutable(plain); err == nil {
+		t.Error("expected non-executable file to fail")
 	}
 }
 
