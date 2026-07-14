@@ -82,7 +82,7 @@ func main() {
 	e.Use(middleware.Recover())
 	e.Use(middleware.CORSWithConfig(middleware.CORSConfig{
 		AllowOrigins: []string{"*"},
-		AllowMethods: []string{http.MethodGet, http.MethodPost, http.MethodPut, http.MethodDelete, http.MethodOptions},
+		AllowMethods: []string{http.MethodGet, http.MethodPost, http.MethodPut, http.MethodPatch, http.MethodDelete, http.MethodOptions},
 		AllowHeaders: []string{echo.HeaderOrigin, echo.HeaderContentType, echo.HeaderAccept, echo.HeaderAuthorization},
 	}))
 
@@ -247,6 +247,15 @@ func main() {
 
 		// Self-update endpoint
 		api.POST("/update", handleUpdate)
+
+		// Reminders endpoints - manage macOS Reminders lists and reminders
+		api.GET("/reminders/lists", handleListReminderLists)
+		api.POST("/reminders/lists", handleCreateReminderList)
+		api.DELETE("/reminders/lists/:id", handleDeleteReminderList)
+		api.GET("/reminders/lists/:id/reminders", handleListReminders)
+		api.POST("/reminders", handleCreateReminder)
+		api.PATCH("/reminders/:id", handleUpdateReminder)
+		api.DELETE("/reminders/:id", handleDeleteReminder)
 	}
 
 	// Start server

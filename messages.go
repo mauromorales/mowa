@@ -127,20 +127,33 @@ func sendTimeout() time.Duration {
 	return defaultSendTimeoutSeconds * time.Second
 }
 
-// executeAppleScript executes an AppleScript with a bounded deadline and returns
-// any error. The process is killed on timeout so no orphaned osascript lingers.
-func executeAppleScript(script string, timeout time.Duration) error {
-	// Give the process a small grace period beyond the AppleScript's own
-	// `with timeout` so its cleaner error can surface before the hard kill.
+// runOSAScript invokes osascript with the given arguments under a bounded
+// deadline, killing the process on timeout so no orphaned osascript lingers.
+// It returns the combined output, whether the deadline was exceeded, and any
+// exec error. This is the shared low-level runner used by both the Messages
+// AppleScript path (executeAppleScript) and the Reminders JXA path.
+func runOSAScript(timeout time.Duration, args ...string) (output []byte, timedOut bool, err error) {
+	// Give the process a small grace period beyond any in-script `with timeout`
+	// so its cleaner error can surface before the hard kill.
 	ctx, cancel := context.WithTimeout(context.Background(), timeout+2*time.Second)
 	defer cancel()
 
-	cmd := exec.CommandContext(ctx, "osascript", "-e", script)
+	cmd := exec.CommandContext(ctx, "osascript", args...)
 
-	output, err := cmd.CombinedOutput()
+	output, err = cmd.CombinedOutput()
 	if ctx.Err() == context.DeadlineExceeded {
+		return output, true, fmt.Errorf("osascript timed out after %s", timeout)
+	}
+	return output, false, err
+}
+
+// executeAppleScript executes an AppleScript with a bounded deadline and returns
+// any error. The process is killed on timeout so no orphaned osascript lingers.
+func executeAppleScript(script string, timeout time.Duration) error {
+	output, timedOut, err := runOSAScript(timeout, "-e", script)
+	if timedOut {
 		log.Printf("AppleScript timed out after %s; killed osascript", timeout)
-		return fmt.Errorf("osascript timed out after %s", timeout)
+		return err
 	}
 	if err != nil {
 		log.Printf("AppleScript failed with error: %v", err)
