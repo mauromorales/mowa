@@ -4,8 +4,13 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"net/http/httptest"
+	"net/url"
 	"os"
 	"testing"
+	"time"
+
+	"github.com/labstack/echo/v4"
 )
 
 // TestStatusForCode verifies the script-code → HTTP-status mapping.
@@ -64,6 +69,65 @@ func TestRunReminderError(t *testing.T) {
 	}
 	if opErr.Message != "nope" {
 		t.Errorf("message = %q, want %q", opErr.Message, "nope")
+	}
+}
+
+// TestPathID confirms that a percent-encoded id is unescaped, while values with
+// no escapes pass through unchanged.
+func TestPathID(t *testing.T) {
+	cases := map[string]string{
+		"x-apple-reminder:%2F%2F76211922-212E-4982-87A5-788906F8C0F2": "x-apple-reminder://76211922-212E-4982-87A5-788906F8C0F2",
+		"x-apple-reminderkit:%2F%2FREMCDList%2FABC123":                "x-apple-reminderkit://REMCDList/ABC123",
+		"385881E6-F5E6-4BC2-A0E7-C07E0EDB954D":                        "385881E6-F5E6-4BC2-A0E7-C07E0EDB954D", // bare UUID, no escapes
+	}
+	for in, want := range cases {
+		if got := pathID(in); got != want {
+			t.Errorf("pathID(%q) = %q, want %q", in, got, want)
+		}
+	}
+}
+
+// TestReminderIDRoutesThroughEcho verifies the real fix end-to-end: a reminder
+// id containing "://" that a client percent-encodes as a single path segment is
+// routed to the :id handler AND arrives decoded (Echo hands back the still-
+// encoded segment, so the handler must unescape it — which pathID does). Without
+// the fix the handler would receive "%2F" and every lookup would 404. This test
+// touches no Reminders data.
+func TestReminderIDRoutesThroughEcho(t *testing.T) {
+	e := echo.New()
+	var seen string
+	e.DELETE("/api/reminders/:id", func(c echo.Context) error {
+		seen = pathID(c.Param("id"))
+		return c.NoContent(http.StatusNoContent)
+	})
+
+	id := "x-apple-reminder://76211922-212E-4982-87A5-788906F8C0F2"
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodDelete, "/api/reminders/"+url.PathEscape(id), nil)
+	e.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusNoContent {
+		t.Fatalf("route did not match encoded id: status=%d", rec.Code)
+	}
+	if seen != id {
+		t.Errorf("handler received %q, want the decoded id %q", seen, id)
+	}
+}
+
+// TestDueDateAcceptsFractionalSeconds documents that RFC3339 due_date values
+// with fractional seconds — which the API itself returns via JXA toISOString()
+// (e.g. "...:00.000Z") — parse successfully, so a client can round-trip a
+// returned due_date back into create/update without a 400.
+func TestDueDateAcceptsFractionalSeconds(t *testing.T) {
+	for _, v := range []string{
+		"2026-08-02T10:00:00Z",
+		"2026-08-02T10:00:00.000Z",
+		"2026-08-02T10:00:00.123456Z",
+		"2026-08-02T10:00:00+02:00",
+	} {
+		if _, err := time.Parse(time.RFC3339, v); err != nil {
+			t.Errorf("time.Parse(RFC3339, %q) rejected a valid value: %v", v, err)
+		}
 	}
 }
 

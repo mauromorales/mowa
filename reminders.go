@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"log"
 	"net/http"
+	"net/url"
 	"strings"
 	"time"
 
@@ -121,6 +122,20 @@ func reminderError(c echo.Context, opErr *reminderOpError) error {
 	return c.JSON(opErr.Status, ReminderErrorResponse{Error: opErr.Message})
 }
 
+// pathID returns the list/reminder id from a URL path parameter. Ids contain
+// characters such as "://" (e.g. "x-apple-reminder://<uuid>") that a client
+// must percent-encode to keep them within a single path segment. Echo matches
+// on the escaped path and returns the still-encoded segment, so we unescape it
+// here before handing it to the JXA scripts; otherwise "%2F" would never match
+// the literal "/" in the real id and every lookup would 404. A value with no
+// escapes (or an invalid escape) is returned unchanged.
+func pathID(raw string) string {
+	if decoded, err := url.PathUnescape(raw); err == nil {
+		return decoded
+	}
+	return raw
+}
+
 // @Summary List Reminders lists
 // @Description Return every list in the macOS Reminders app with its name and stable id. The first call triggers a macOS Automation (TCC) permission prompt for controlling Reminders. macOS only.
 // @Tags reminders
@@ -179,7 +194,7 @@ func handleCreateReminderList(c echo.Context) error {
 // @Failure 500 {object} ReminderErrorResponse "Internal server error"
 // @Router /api/reminders/lists/{id} [delete]
 func handleDeleteReminderList(c echo.Context) error {
-	id := c.Param("id")
+	id := pathID(c.Param("id"))
 	if id == "" {
 		return c.JSON(http.StatusBadRequest, ReminderErrorResponse{Error: "list id is required"})
 	}
@@ -200,7 +215,7 @@ func handleDeleteReminderList(c echo.Context) error {
 // @Failure 500 {object} ReminderErrorResponse "Internal server error"
 // @Router /api/reminders/lists/{id}/reminders [get]
 func handleListReminders(c echo.Context) error {
-	id := c.Param("id")
+	id := pathID(c.Param("id"))
 	if id == "" {
 		return c.JSON(http.StatusBadRequest, ReminderErrorResponse{Error: "list id is required"})
 	}
@@ -282,7 +297,7 @@ func handleCreateReminder(c echo.Context) error {
 // @Failure 500 {object} ReminderErrorResponse "Internal server error"
 // @Router /api/reminders/{id} [patch]
 func handleUpdateReminder(c echo.Context) error {
-	id := c.Param("id")
+	id := pathID(c.Param("id"))
 	if id == "" {
 		return c.JSON(http.StatusBadRequest, ReminderErrorResponse{Error: "reminder id is required"})
 	}
@@ -346,7 +361,7 @@ func handleUpdateReminder(c echo.Context) error {
 // @Failure 500 {object} ReminderErrorResponse "Internal server error"
 // @Router /api/reminders/{id} [delete]
 func handleDeleteReminder(c echo.Context) error {
-	id := c.Param("id")
+	id := pathID(c.Param("id"))
 	if id == "" {
 		return c.JSON(http.StatusBadRequest, ReminderErrorResponse{Error: "reminder id is required"})
 	}
