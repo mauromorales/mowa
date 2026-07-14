@@ -174,6 +174,22 @@ func TestRenderLaunchdPlistWithPort(t *testing.T) {
 	}
 }
 
+func TestServiceStatusReport(t *testing.T) {
+	if got := serviceStatusReport(1234, true); !strings.Contains(got, "running (pid 1234)") {
+		t.Errorf("running case: %q", got)
+	}
+	// Loaded but no pid → a warning, not a "running" claim.
+	loaded := serviceStatusReport(0, true)
+	if strings.Contains(loaded, "running (pid") || !strings.Contains(loaded, "⚠️") {
+		t.Errorf("loaded-but-not-running case: %q", loaded)
+	}
+	// Not loaded at all → a warning.
+	notLoaded := serviceStatusReport(0, false)
+	if !strings.Contains(notLoaded, "⚠️") || !strings.Contains(notLoaded, "not loaded") {
+		t.Errorf("not-loaded case: %q", notLoaded)
+	}
+}
+
 func TestInstallRejectsInvalidPort(t *testing.T) {
 	for _, bad := range []string{"0", "-1", "70000", "abc", "80a"} {
 		if err := runInstall([]string{"--port", bad}); err == nil {

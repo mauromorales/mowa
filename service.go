@@ -153,7 +153,7 @@ func runInstall(args []string) error {
 		return err
 	}
 
-	fmt.Printf("✅ Installed and started %s\n", launchdLabel)
+	fmt.Printf("✅ Installed %s\n", launchdLabel)
 	fmt.Printf("   binary: %s\n", binaryPath)
 	fmt.Printf("   config: %s\n", configPath)
 	if port != "" {
@@ -162,8 +162,46 @@ func runInstall(args []string) error {
 		fmt.Println("   port:   8080 (default; pass --port or set MOWA_PORT to change)")
 	}
 	fmt.Println("   The service will start automatically at login and stay alive (KeepAlive).")
-	fmt.Printf("   Check it with: launchctl print %s\n", serviceTarget)
+
+	// `bootstrap` only means the job was loaded, not that it stayed running — a
+	// job that crashes immediately (e.g. a port conflict) still bootstraps fine.
+	// Give launchd a moment to spawn the process, then report what actually
+	// happened so "Installed" isn't misread as "healthy".
+	pid, loaded := waitForServiceStart(serviceTarget, 2*time.Second)
+	fmt.Print(serviceStatusReport(pid, loaded))
+	fmt.Printf("   Inspect it with: launchctl print %s\n", serviceTarget)
 	return nil
+}
+
+// waitForServiceStart polls the service target until it reports a running pid or
+// the timeout elapses, returning the pid (0 if none) and whether the job is
+// loaded. launchd spawns the process asynchronously after bootstrap, so a brief
+// poll avoids a false "not running" report for a service that is simply still
+// starting.
+func waitForServiceStart(serviceTarget string, timeout time.Duration) (pid int, loaded bool) {
+	deadline := time.Now().Add(timeout)
+	for {
+		pid, loaded = servicePID(serviceTarget)
+		if pid > 0 || time.Now().After(deadline) {
+			return pid, loaded
+		}
+		time.Sleep(200 * time.Millisecond)
+	}
+}
+
+// serviceStatusReport renders a one-line status from a service's pid/loaded
+// state after bootstrap: running with a pid, loaded but not (yet) running
+// (likely a startup crash — worth checking logs and port conflicts), or not
+// loaded at all.
+func serviceStatusReport(pid int, loaded bool) string {
+	switch {
+	case pid > 0:
+		return fmt.Sprintf("   status: running (pid %d)\n", pid)
+	case loaded:
+		return "   ⚠️  status: loaded but not running — it likely crashed on startup; check the logs above/below and for a port conflict\n"
+	default:
+		return "   ⚠️  status: not loaded after bootstrap; run the inspect command below to investigate\n"
+	}
 }
 
 // defaultBinaryLocation returns the path of the running executable so the
