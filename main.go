@@ -51,6 +51,15 @@ var (
 // @name Authorization
 
 func main() {
+	// Subcommand dispatch: `mowa install [flags]` installs mowa as a launchd
+	// login service and exits. Any other invocation starts the HTTP server.
+	if len(os.Args) > 1 && os.Args[1] == "install" {
+		if err := runInstall(os.Args[2:]); err != nil {
+			log.Fatalf("install failed: %v", err)
+		}
+		return
+	}
+
 	// Parse command line flags
 	var configPath string
 	flag.StringVar(&configPath, "config", "", "Path to configuration file (optional)")

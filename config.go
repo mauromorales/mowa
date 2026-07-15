@@ -1,6 +1,7 @@
 package main
 
 import (
+	"errors"
 	"fmt"
 	"log"
 	"os"
@@ -10,27 +11,41 @@ import (
 
 var appConfig *Config
 
+// defaultConfig returns the built-in configuration used when no config file is
+// present.
+func defaultConfig() *Config {
+	return &Config{
+		Messages: MessagesConfig{
+			Groups:         make(map[string][]string),
+			TimeoutSeconds: defaultSendTimeoutSeconds,
+		},
+		Storage: StorageConfig{
+			Dir: "./storage", // Default storage directory
+		},
+		Reminders: RemindersConfig{
+			TimeoutSeconds: defaultReminderTimeoutSeconds,
+		},
+	}
+}
+
 // loadConfig loads configuration from a YAML file
 func loadConfig(configPath string) (*Config, error) {
-	// If no config path provided, return default empty config
+	// If no config path provided, return the default config.
 	if configPath == "" {
-		return &Config{
-			Messages: MessagesConfig{
-				Groups:         make(map[string][]string),
-				TimeoutSeconds: defaultSendTimeoutSeconds,
-			},
-			Storage: StorageConfig{
-				Dir: "./storage", // Default storage directory
-			},
-			Reminders: RemindersConfig{
-				TimeoutSeconds: defaultReminderTimeoutSeconds,
-			},
-		}, nil
+		return defaultConfig(), nil
 	}
 
 	// Read config file
 	data, err := os.ReadFile(configPath)
 	if err != nil {
+		// A missing config file is not an error: fall back to defaults so a
+		// service pointed at a not-yet-created config (e.g. the launchd agent
+		// installed by `mowa install`) still starts. Other read errors such as
+		// bad permissions are real and surfaced to the caller.
+		if errors.Is(err, os.ErrNotExist) {
+			log.Printf("Config file %s not found; using defaults", configPath)
+			return defaultConfig(), nil
+		}
 		return nil, fmt.Errorf("failed to read config file %s: %w", configPath, err)
 	}
 
