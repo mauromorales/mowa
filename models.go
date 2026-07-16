@@ -2,9 +2,38 @@ package main
 
 // Config represents the application configuration
 type Config struct {
-	Messages  MessagesConfig  `yaml:"messages"`
-	Storage   StorageConfig   `yaml:"storage"`
-	Reminders RemindersConfig `yaml:"reminders"`
+	Messages            MessagesConfig            `yaml:"messages"`
+	Storage             StorageConfig             `yaml:"storage"`
+	Reminders           RemindersConfig           `yaml:"reminders"`
+	SoftwareUpdateCheck SoftwareUpdateCheckConfig `yaml:"software_update_check"`
+}
+
+// SoftwareUpdateCheckConfig configures the nightly `mowa check-updates` run
+// that notifies recipients when a restart-required macOS update is available
+// (issue #17: auto-installed OS updates de-register iMessage, so updates are
+// installed manually and mowa reminds you when one is pending).
+type SoftwareUpdateCheckConfig struct {
+	// Enabled toggles the check. When omitted (nil) the check is enabled as
+	// long as Notify has recipients, so configuring recipients is all that is
+	// needed; an explicit `enabled: false` turns it off without deleting them.
+	Enabled *bool `yaml:"enabled"`
+	// Notify lists who to message about an available update. Entries are phone
+	// numbers or group names, exactly like the `to`/`notify` fields of the
+	// messaging endpoints (groups are expanded via messages.groups).
+	Notify []string `yaml:"notify"`
+	// Schedule is the local time of day ("HH:MM", 24h) the LaunchAgent runs
+	// the check. Defaults to defaultUpdateCheckSchedule (03:00).
+	Schedule string `yaml:"schedule"`
+	// TimeoutSeconds bounds the `softwareupdate --list` call, which hits the
+	// network and can take a minute or more. Defaults to
+	// defaultUpdateCheckTimeoutSeconds.
+	TimeoutSeconds int `yaml:"timeout_seconds"`
+}
+
+// isEnabled reports whether the update check should actually run: there must
+// be someone to notify, and `enabled` must not be explicitly false.
+func (c SoftwareUpdateCheckConfig) isEnabled() bool {
+	return len(c.Notify) > 0 && (c.Enabled == nil || *c.Enabled)
 }
 
 // RemindersConfig represents the reminders configuration

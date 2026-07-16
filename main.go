@@ -52,12 +52,22 @@ var (
 
 func main() {
 	// Subcommand dispatch: `mowa install [flags]` installs mowa as a launchd
-	// login service and exits. Any other invocation starts the HTTP server.
-	if len(os.Args) > 1 && os.Args[1] == "install" {
-		if err := runInstall(os.Args[2:]); err != nil {
-			log.Fatalf("install failed: %v", err)
+	// login service, `mowa check-updates [flags]` runs the scheduled software
+	// update check; both exit when done. Any other invocation starts the HTTP
+	// server.
+	if len(os.Args) > 1 {
+		switch os.Args[1] {
+		case "install":
+			if err := runInstall(os.Args[2:]); err != nil {
+				log.Fatalf("install failed: %v", err)
+			}
+			return
+		case "check-updates":
+			if err := runCheckUpdates(os.Args[2:]); err != nil {
+				log.Fatalf("check-updates failed: %v", err)
+			}
+			return
 		}
-		return
 	}
 
 	// Parse command line flags
@@ -70,6 +80,14 @@ func main() {
 	appConfig, err = loadConfig(configPath)
 	if err != nil {
 		log.Fatalf("Failed to load configuration: %v", err)
+	}
+
+	// Self-heal the scheduled update-check agent: after an upgrade (e.g. via
+	// POST /api/update) launchd relaunches this server on the new binary, and
+	// this makes sure the agent exists and matches the config without anyone
+	// re-running `mowa install`. Asynchronous and log-only on failure.
+	if appConfig.SoftwareUpdateCheck.isEnabled() {
+		go ensureUpdateCheckAgentAtStartup(configPath)
 	}
 
 	// Get port from environment variable or use default 8080
