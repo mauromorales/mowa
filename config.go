@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"strings"
 
 	"gopkg.in/yaml.v3"
 )
@@ -24,6 +25,10 @@ func defaultConfig() *Config {
 		},
 		Reminders: RemindersConfig{
 			TimeoutSeconds: defaultReminderTimeoutSeconds,
+		},
+		SoftwareUpdateCheck: SoftwareUpdateCheckConfig{
+			Schedule:       defaultUpdateCheckSchedule,
+			TimeoutSeconds: defaultUpdateCheckTimeoutSeconds,
 		},
 	}
 }
@@ -73,6 +78,14 @@ func loadConfig(configPath string) (*Config, error) {
 	// Set default reminders timeout if not specified or invalid
 	if config.Reminders.TimeoutSeconds <= 0 {
 		config.Reminders.TimeoutSeconds = defaultReminderTimeoutSeconds
+	}
+
+	// Set software update check defaults if not specified or invalid
+	if strings.TrimSpace(config.SoftwareUpdateCheck.Schedule) == "" {
+		config.SoftwareUpdateCheck.Schedule = defaultUpdateCheckSchedule
+	}
+	if config.SoftwareUpdateCheck.TimeoutSeconds <= 0 {
+		config.SoftwareUpdateCheck.TimeoutSeconds = defaultUpdateCheckTimeoutSeconds
 	}
 
 	log.Printf("Configuration loaded from %s with %d message groups and storage dir: %s", configPath, len(config.Messages.Groups), config.Storage.Dir)

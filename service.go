@@ -6,6 +6,7 @@ import (
 	"flag"
 	"fmt"
 	"html"
+	"log"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -19,6 +20,11 @@ import (
 // service target, and the reload logic all agree on the same identity.
 const (
 	launchdLabel = "com.mauromorales.mowa"
+
+	// updateCheckLabel is the second, calendar-scheduled agent that runs
+	// `mowa check-updates` (issue #17). Installed by `mowa install` and kept in
+	// sync by the server at startup, so upgrades pick it up without root.
+	updateCheckLabel = "com.mauromorales.mowa-update-check"
 
 	// defaultBinaryPath is the fallback binary location used only when the
 	// running executable's path can't be resolved. Normally `mowa install`
@@ -170,7 +176,173 @@ func runInstall(args []string) error {
 	pid, loaded := waitForServiceStart(serviceTarget, 2*time.Second)
 	fmt.Print(serviceStatusReport(pid, loaded))
 	fmt.Printf("   Inspect it with: launchctl print %s\n", serviceTarget)
+
+	// Also install the update-check agent. It is always installed; whether it
+	// actually notifies is governed by software_update_check in the config, and
+	// `mowa check-updates` exits silently when that is absent. The schedule is
+	// read from the config the service will use.
+	cfg, err := loadConfig(configPath)
+	if err != nil {
+		return fmt.Errorf("could not read config to schedule the update check: %w", err)
+	}
+	changed, err := ensureUpdateCheckAgent(binaryPath, configPath, cfg.SoftwareUpdateCheck.Schedule, home)
+	if err != nil {
+		return fmt.Errorf("failed to install the update-check agent: %w", err)
+	}
+	if changed {
+		fmt.Printf("✅ Installed %s (runs `mowa check-updates` daily at %s)\n", updateCheckLabel, scheduleOrDefault(cfg.SoftwareUpdateCheck.Schedule))
+	} else {
+		fmt.Printf("✅ %s already up to date (runs `mowa check-updates` daily at %s)\n", updateCheckLabel, scheduleOrDefault(cfg.SoftwareUpdateCheck.Schedule))
+	}
+	if !cfg.SoftwareUpdateCheck.isEnabled() {
+		fmt.Println("   Note: update notifications are off until software_update_check.notify is set in the config.")
+	}
 	return nil
+}
+
+// scheduleOrDefault normalizes an empty schedule to the built-in default for
+// display and plist rendering.
+func scheduleOrDefault(schedule string) string {
+	if strings.TrimSpace(schedule) == "" {
+		return defaultUpdateCheckSchedule
+	}
+	return strings.TrimSpace(schedule)
+}
+
+// parseSchedule parses a "HH:MM" (24h) time of day.
+func parseSchedule(schedule string) (hour, minute int, err error) {
+	t, err := time.Parse("15:04", scheduleOrDefault(schedule))
+	if err != nil {
+		return 0, 0, fmt.Errorf("invalid software_update_check.schedule %q: want HH:MM (24h), e.g. \"03:00\"", schedule)
+	}
+	return t.Hour(), t.Minute(), nil
+}
+
+// ensureUpdateCheckAgent writes and bootstraps the update-check LaunchAgent,
+// used both by `mowa install` and by the server at startup (so an existing
+// installation gains or re-syncs the agent after an upgrade or a schedule
+// change — everything here stays in the per-user gui domain, no root needed).
+// It is idempotent: when the plist already matches and the job is loaded it
+// does nothing, so a server restart causes no launchd churn. Returns whether
+// anything was (re)installed.
+func ensureUpdateCheckAgent(binaryPath, configPath, schedule, home string) (changed bool, err error) {
+	hour, minute, err := parseSchedule(schedule)
+	if err != nil {
+		return false, err
+	}
+
+	// The agent logs next to nothing, but a scan failure should be findable.
+	stdoutLog := filepath.Join(home, "Library", "Logs", "mowa-update-check.out")
+	stderrLog := filepath.Join(home, "Library", "Logs", "mowa-update-check.err")
+
+	plist := renderUpdateCheckPlist(binaryPath, configPath, stdoutLog, stderrLog, hour, minute)
+	launchAgentsDir := filepath.Join(home, "Library", "LaunchAgents")
+	plistPath := filepath.Join(launchAgentsDir, updateCheckLabel+".plist")
+	serviceTarget := fmt.Sprintf("gui/%d/%s", os.Getuid(), updateCheckLabel)
+
+	existing, readErr := os.ReadFile(plistPath)
+	_, loaded := servicePID(serviceTarget)
+	if readErr == nil && string(existing) == plist && loaded {
+		return false, nil
+	}
+
+	for _, dir := range []string{launchAgentsDir, filepath.Dir(stdoutLog)} {
+		if err := os.MkdirAll(dir, 0700); err != nil {
+			return false, fmt.Errorf("failed to create directory %s: %w", dir, err)
+		}
+	}
+	if err := writeFileAtomic(plistPath, []byte(plist), 0600); err != nil {
+		return false, fmt.Errorf("failed to write launchd plist %s: %w", plistPath, err)
+	}
+
+	if loaded {
+		if out, err := runLaunchctl("bootout", serviceTarget); err != nil {
+			// Non-fatal: bootstrap below reports the real problem if there is one.
+			log.Printf("note: %v\n%s", err, indent(out))
+		}
+	}
+	if out, err := runLaunchctl("bootstrap", fmt.Sprintf("gui/%d", os.Getuid()), plistPath); err != nil {
+		if out != "" {
+			return false, fmt.Errorf("%w\n%s", err, indent(out))
+		}
+		return false, err
+	}
+	return true, nil
+}
+
+// ensureUpdateCheckAgentAtStartup is the server-startup self-heal: when the
+// loaded config enables update checks, make sure the scheduled agent exists and
+// matches the config. Runs asynchronously and only logs on failure — a broken
+// launchd interaction must never take the HTTP server down with it.
+func ensureUpdateCheckAgentAtStartup(configPath string) {
+	if _, err := exec.LookPath("launchctl"); err != nil {
+		log.Printf("⚠️ software_update_check is enabled but launchctl is unavailable; cannot schedule the update check: %v", err)
+		return
+	}
+	home, err := os.UserHomeDir()
+	if err != nil {
+		log.Printf("⚠️ could not resolve home directory to schedule the update check: %v", err)
+		return
+	}
+	absConfig, err := filepath.Abs(configPath)
+	if err != nil {
+		log.Printf("⚠️ could not resolve config path to schedule the update check: %v", err)
+		return
+	}
+	changed, err := ensureUpdateCheckAgent(defaultBinaryLocation(), absConfig, appConfig.SoftwareUpdateCheck.Schedule, home)
+	if err != nil {
+		log.Printf("⚠️ could not install the update-check agent: %v", err)
+		return
+	}
+	if changed {
+		log.Printf("✅ Installed %s (runs `mowa check-updates` daily at %s)", updateCheckLabel, scheduleOrDefault(appConfig.SoftwareUpdateCheck.Schedule))
+	}
+}
+
+// renderUpdateCheckPlist builds the calendar-scheduled agent that runs
+// `mowa check-updates` at the given local time. Unlike the server agent it has
+// no RunAtLoad/KeepAlive: launchd starts it at the scheduled time (or on the
+// next wake if the Mac was asleep) and it exits when done. WorkingDirectory
+// matches the server agent so relative paths resolve identically.
+func renderUpdateCheckPlist(binaryPath, configPath, stdoutLog, stderrLog string, hour, minute int) string {
+	return fmt.Sprintf(`<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>%s</string>
+    <key>ProgramArguments</key>
+    <array>
+        <string>%s</string>
+        <string>check-updates</string>
+        <string>-config</string>
+        <string>%s</string>
+    </array>
+    <key>WorkingDirectory</key>
+    <string>%s</string>
+    <key>StartCalendarInterval</key>
+    <dict>
+        <key>Hour</key>
+        <integer>%d</integer>
+        <key>Minute</key>
+        <integer>%d</integer>
+    </dict>
+    <key>StandardOutPath</key>
+    <string>%s</string>
+    <key>StandardErrorPath</key>
+    <string>%s</string>
+</dict>
+</plist>
+`,
+		html.EscapeString(updateCheckLabel),
+		html.EscapeString(binaryPath),
+		html.EscapeString(configPath),
+		html.EscapeString(filepath.Dir(configPath)),
+		hour,
+		minute,
+		html.EscapeString(stdoutLog),
+		html.EscapeString(stderrLog),
+	)
 }
 
 // waitForServiceStart polls the service target until it reports a running pid or

@@ -11,6 +11,7 @@ A Go-native web API server that allows you to interact with MacOS and iCloud fea
 - **File Storage**: Save and retrieve YAML files with configurable storage directory
 - **Reminders**: Manage macOS Reminders lists and reminders (create, list, edit, complete, delete)
 - **Login Service**: `mowa install` sets mowa up as a launchd agent that starts at login and stays alive
+- **Update Notifications**: a nightly check messages you when a restart-required macOS update is available, so you can keep automatic installs off and install manually
 - **Modular Architecture**: Easy to extend with new endpoints for volume control, app launching, etc.
 - **Go Native**: Single binary deployment, no external runtimes required
 - **High Performance**: Compiled Go with Echo web framework
@@ -175,6 +176,49 @@ tail -f ~/Library/Logs/mowa.out                       # view logs
 
 Running mowa under launchd is also what lets the `POST /api/update` self-update
 endpoint relaunch the process on the new binary.
+
+## macOS Update Notifications
+
+Auto-installed macOS updates reboot into Setup Assistant and de-register
+iMessage, silently breaking every send until someone completes the Apple-ID
+sign-in. The recommended setup is therefore to **disable automatic macOS update
+installs** and let mowa tell you when an update is waiting.
+
+`mowa install` also writes a second, calendar-scheduled agent
+(`~/Library/LaunchAgents/com.mauromorales.mowa-update-check.plist`) that runs
+`mowa check-updates` daily (03:00 by default). The check runs
+`softwareupdate --list` and, when a **restart-required** update (i.e. a macOS
+OS update — Safari and Command Line Tools updates stay silent) is newly
+available, messages the configured recipients:
+
+```
+⬆️ macOS update available on macmini.local — install manually: macOS Tahoe 26.5.2
+```
+
+Each update is announced once (tracked in `update-check-state.json` next to the
+config file); when everything is up to date, nothing is sent. Notifications are
+**off until you configure recipients** in `config.yaml`:
+
+```yaml
+software_update_check:
+  notify:            # phone numbers or group names, like the messaging endpoints
+    - admins
+    - "+1234567890"
+  schedule: "03:00"  # optional, HH:MM local time (default 03:00)
+  # enabled: false   # optional kill switch without removing recipients
+```
+
+The server also re-syncs this agent at startup whenever update checks are
+enabled in the config, so an existing installation picks the agent up after a
+self-update (`POST /api/update`) or a schedule change without re-running
+`mowa install` — no root required, everything stays in the per-user launchd
+domain. Listing updates does not need root either; only installing them does.
+
+```bash
+launchctl print gui/$(id -u)/com.mauromorales.mowa-update-check  # inspect
+tail -f ~/Library/Logs/mowa-update-check.out                     # view logs
+./mowa check-updates -config config.yaml                         # run once by hand
+```
 
 ## API Documentation
 

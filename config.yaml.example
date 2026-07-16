@@ -23,4 +23,25 @@ reminders:
   # and reported as an error. Defaults to 30 if unset. Reminders scripting can
   # be slow on large databases, so this is higher than the messages timeout;
   # raise it further if your Reminders database is very large.
-  timeout_seconds: 30 
+  timeout_seconds: 30
+
+# Notify when a restart-required macOS update is available, so automatic
+# installs can stay off (they reboot into Setup Assistant and de-register
+# iMessage) and updates are installed manually instead. The check runs daily
+# via the com.mauromorales.mowa-update-check LaunchAgent that `mowa install`
+# sets up, and does nothing unless `notify` has recipients.
+software_update_check:
+  # Optional; defaults to true when notify has recipients. Set to false to
+  # pause notifications without removing the recipients.
+  enabled: true
+  # Who to message, exactly like the messaging endpoints: phone numbers or
+  # group names from messages.groups.
+  notify:
+    - admins
+    - "+1234567890"
+  # Local time of day (HH:MM, 24h) the check runs. Defaults to 03:00. If the
+  # Mac is asleep at that time, launchd runs the check on the next wake.
+  schedule: "03:00"
+  # Max seconds `softwareupdate --list` may run (it scans Apple's servers and
+  # routinely takes 30-60s). Defaults to 300 if unset.
+  timeout_seconds: 300 
