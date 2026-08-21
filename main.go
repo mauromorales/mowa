@@ -256,8 +256,9 @@ func main() {
 	// Swagger documentation (for other swagger assets)
 	e.GET("/swagger/*", echoSwagger.WrapHandler)
 
-	// API routes
-	api := e.Group("/api")
+	// API routes. Gated behind apiKeyMiddleware; the docs/swagger/logo routes
+	// above stay open since they're not sensitive on their own.
+	api := e.Group("/api", apiKeyMiddleware(appConfig))
 	{
 		// Messages endpoint
 		api.POST("/messages", handleSendMessages)

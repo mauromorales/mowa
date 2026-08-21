@@ -2,6 +2,11 @@ package main
 
 // Config represents the application configuration
 type Config struct {
+	// APIKey, when set, is required in the Authorization header of every
+	// /api request (see auth.go). Empty means the API is reachable without a
+	// credential, mowa logs a warning at startup when that's the case rather
+	// than failing silently.
+	APIKey              string                    `yaml:"api_key"`
 	Messages            MessagesConfig            `yaml:"messages"`
 	Storage             StorageConfig             `yaml:"storage"`
 	Reminders           RemindersConfig           `yaml:"reminders"`

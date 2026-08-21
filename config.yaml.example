@@ -1,6 +1,14 @@
 # Mowa Configuration Example
 # Copy this file to config.yaml and modify as needed
 
+# Required in the Authorization header of every /api request when set (the
+# raw value, no "Bearer " prefix). mowa is reachable over the LAN by design
+# (e.g. as polaris.local), not just localhost, so this is the actual boundary
+# between "anyone on the network" and "callers who know the key". Leaving it
+# unset keeps every /api endpoint open with no credential; mowa logs a
+# warning at startup when that's the case.
+api_key: "change-me-to-a-long-random-value"
+
 messages:
   # Max seconds a single osascript send may run before it is killed and
   # reported as a failure. Defaults to 7 if unset. Keep it well under the
