@@ -78,7 +78,7 @@ automatically at login.
 
 ### 2. Test the API
 
-The server will start on `http://localhost:8080` by default. You can test it with:
+The server listens on `http://localhost:8080` by default, and, like any other service on the machine, is also reachable from the rest of your LAN at whatever hostname or IP the Mac answers to (e.g. `polaris.local`), it does not bind to localhost only. See [Authentication](#authentication) below before relying on that. You can test it with:
 
 ```bash
 # Access API documentation (redirects from root)
@@ -625,10 +625,25 @@ Run in debug mode for detailed logging:
 go run .
 ```
 
+## Authentication
+
+mowa listens on all interfaces by default, not localhost only, that's intentional: it's meant to be reachable from other devices on your network (e.g. a doorbell node calling it at `polaris.local`). Set `api_key` in `config.yaml` to require a credential for every `/api` request:
+
+```yaml
+api_key: "a long random value"
+```
+
+Send it back on every request in the `Authorization` header, as the raw value (no `Bearer ` prefix, this is an API key, not an OAuth token):
+
+```bash
+curl -H "Authorization: a long random value" http://localhost:8080/api/uptime
+```
+
+Leaving `api_key` unset keeps every `/api` endpoint open to anyone who can reach the host, with no credential at all. mowa logs a warning at startup when that's the case, but still starts, so an existing setup doesn't break silently on upgrade. The `/swagger/*` docs, the logo, and the root redirect are never gated, only `/api/*` is.
+
 ## Security Considerations
 
-- The API runs on localhost only by default
-- No authentication is implemented (add as needed for production)
+- No authentication is required unless `api_key` is set, see [Authentication](#authentication) above
 - AppleScript execution requires user interaction for Messages app
 - Consider implementing rate limiting for production use
 
